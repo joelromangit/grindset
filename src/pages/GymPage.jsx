@@ -5,6 +5,8 @@ import {
   Calendar, List, Flame, TrendingUp, X, Check, Copy, Settings
 } from 'lucide-react'
 import { mockGym } from '../data/mockData'
+import { useDb } from '../hooks/useDb'
+import { gymDb } from '../lib/db'
 
 const DAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
 const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -37,8 +39,8 @@ function formatTimer(seconds) {
 }
 
 function GymPage() {
-  const [templates, setTemplates] = useState(mockGym.templates)
-  const [workouts, setWorkouts] = useState(mockGym.workouts)
+  const [templates, setTemplates] = useDb(gymDb.getTemplates, mockGym.templates)
+  const [workouts, setWorkouts] = useDb(gymDb.getWorkouts, mockGym.workouts)
   const [weeklyGoal] = useState(mockGym.weeklyGoal)
   const [view, setView] = useState('list') // 'list' | 'calendar'
   const [modal, setModal] = useState(null)
@@ -159,6 +161,7 @@ function GymPage() {
       durationMin: Math.round(elapsed / 60)
     }
     setWorkouts([finished, ...workouts])
+    gymDb.addWorkout(finished)
     setActiveWorkout(null)
     setTimerStart(null)
     setElapsed(0)
@@ -214,6 +217,7 @@ function GymPage() {
       if (w.id !== editTimerForm.id) return w
       return { ...w, startTime: editTimerForm.startTime, endTime: editTimerForm.endTime, durationMin: editTimerForm.durationMin }
     }))
+    gymDb.updateWorkoutTimer(editTimerForm.id, editTimerForm.startTime, editTimerForm.endTime, editTimerForm.durationMin)
     setEditTimerForm(null)
     setModal(null)
   }
@@ -223,8 +227,10 @@ function GymPage() {
     if (!templateForm || !templateForm.name) return
     if (templateForm.id) {
       setTemplates(templates.map(t => t.id === templateForm.id ? { ...templateForm } : t))
+      gymDb.updateTemplate(templateForm.id, templateForm)
     } else {
       setTemplates([...templates, { ...templateForm, id: Date.now() }])
+      gymDb.addTemplate(templateForm)
     }
     setTemplateForm(null)
     setModal(null)
@@ -232,6 +238,7 @@ function GymPage() {
 
   const handleDeleteTemplate = (id) => {
     setTemplates(templates.filter(t => t.id !== id))
+    gymDb.deleteTemplate(id)
   }
 
   const addExToTemplate = () => {
@@ -253,6 +260,7 @@ function GymPage() {
   // Delete workout
   const handleDeleteWorkout = (id) => {
     setWorkouts(workouts.filter(w => w.id !== id))
+    gymDb.deleteWorkout(id)
     setExpandedWorkout(null)
     setSelectedDate(null)
   }

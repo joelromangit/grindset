@@ -4,6 +4,8 @@ import {
   Camera, BookMarked, Clock, TrendingUp, ChevronLeft
 } from 'lucide-react'
 import { mockReading } from '../data/mockData'
+import { useDb } from '../hooks/useDb'
+import { readingDb } from '../lib/db'
 
 const COVER_COLORS = ['#8b5cf6', '#f59e0b', '#ef4444', '#06b6d4', '#10b981', '#6366f1', '#ec4899', '#f97316', '#14b8a6', '#a855f7']
 
@@ -94,7 +96,7 @@ function BookCover({ book, size = 'md', onClick }) {
 }
 
 function ReadingPage() {
-  const [books, setBooks] = useState(mockReading.books)
+  const [books, setBooks] = useDb(readingDb.getBooks, mockReading.books)
   const [dailyGoal, setDailyGoal] = useState(mockReading.dailyGoalPages)
   const [modal, setModal] = useState(null)
   const [activeBook, setActiveBook] = useState(null)
@@ -148,6 +150,7 @@ function ReadingPage() {
       dailyLog: []
     }
     setBooks([...books, book])
+    readingDb.addBook(book)
     setNewBook({ title: '', author: '', totalPages: '', goal: '', coverColor: '#8b5cf6', status: 'wishlist' })
     setCoverPreview(null)
     setModal(null)
@@ -156,20 +159,26 @@ function ReadingPage() {
   const handleUpdateProgress = (bookId) => {
     const pages = parseInt(updatePages)
     if (isNaN(pages)) return
+    const book = books.find(b => b.id === bookId)
+    const newCurrent = Math.min(pages, book.totalPages)
+    const pagesRead = newCurrent - book.currentPage
+    const status = newCurrent >= book.totalPages ? 'done' : book.status
     setBooks(books.map(b => {
       if (b.id !== bookId) return b
-      const newCurrent = Math.min(pages, b.totalPages)
-      const pagesRead = newCurrent - b.currentPage
       const log = pagesRead > 0
         ? [{ date: todayStr, pages: pagesRead }, ...(b.dailyLog || []).filter(l => l.date !== todayStr)]
         : b.dailyLog || []
       return {
         ...b,
         currentPage: newCurrent,
-        status: newCurrent >= b.totalPages ? 'done' : b.status,
+        status,
         dailyLog: log
       }
     }))
+    readingDb.updateBook(bookId, { currentPage: newCurrent, status })
+    if (pagesRead > 0) {
+      readingDb.logPages(bookId, todayStr, pagesRead)
+    }
     setUpdatePages('')
     setModal(null)
   }
@@ -177,9 +186,11 @@ function ReadingPage() {
   const handleLogPages = (bookId) => {
     const pages = parseInt(logPages)
     if (isNaN(pages) || pages <= 0) return
+    const book = books.find(b => b.id === bookId)
+    const newCurrent = Math.min(book.currentPage + pages, book.totalPages)
+    const status = newCurrent >= book.totalPages ? 'done' : book.status
     setBooks(books.map(b => {
       if (b.id !== bookId) return b
-      const newCurrent = Math.min(b.currentPage + pages, b.totalPages)
       const existing = (b.dailyLog || []).find(l => l.date === todayStr)
       const log = existing
         ? (b.dailyLog || []).map(l => l.date === todayStr ? { ...l, pages: l.pages + pages } : l)
@@ -187,37 +198,44 @@ function ReadingPage() {
       return {
         ...b,
         currentPage: newCurrent,
-        status: newCurrent >= b.totalPages ? 'done' : b.status,
+        status,
         dailyLog: log
       }
     }))
+    readingDb.updateBook(bookId, { currentPage: newCurrent, status })
+    readingDb.logPages(bookId, todayStr, pages)
     setLogPages('')
     setModal(null)
   }
 
   const changeStatus = (bookId, status) => {
+    const book = books.find(b => b.id === bookId)
+    const startDate = status === 'reading' && !book.startDate ? todayStr : book.startDate
+    const currentPage = status === 'done' ? book.totalPages : book.currentPage
     setBooks(books.map(b => {
       if (b.id !== bookId) return b
-      return {
-        ...b,
-        status,
-        startDate: status === 'reading' && !b.startDate ? todayStr : b.startDate,
-        currentPage: status === 'done' ? b.totalPages : b.currentPage
-      }
+      return { ...b, status, startDate, currentPage }
     }))
+    readingDb.updateBook(bookId, { status, startDate, currentPage })
   }
 
   const handleDelete = (bookId) => {
     setBooks(books.filter(b => b.id !== bookId))
+    readingDb.deleteBook(bookId)
     setActiveBook(null)
   }
 
-  const handleCoverUpload = (e) => {
+  const handleCoverUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => setCoverPreview(ev.target.result)
-    reader.readAsDataURL(file)
+    const url = await readingDb.uploadCover(file)
+    if (url) {
+      setCoverPreview(url)
+    } else {
+      const reader = new FileReader()
+      reader.onload = (ev) => setCoverPreview(ev.target.result)
+      reader.readAsDataURL(file)
+    }
   }
 
   // ========== DETAIL VIEW ==========

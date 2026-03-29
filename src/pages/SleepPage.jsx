@@ -4,6 +4,8 @@ import {
   ChevronLeft, ChevronRight, Check, AlertTriangle
 } from 'lucide-react'
 import { mockSleep } from '../data/mockData'
+import { useDb } from '../hooks/useDb'
+import { sleepDb } from '../lib/db'
 
 const DAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
 const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado']
@@ -57,8 +59,8 @@ function getCalendarWeeks(year, month) {
 const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 
 function SleepPage() {
-  const [records, setRecords] = useState(mockSleep.records)
-  const [schedules, setSchedules] = useState(mockSleep.schedules)
+  const [records, setRecords, { loading: loadingRecords }] = useDb(sleepDb.getRecords, mockSleep.records)
+  const [schedules, setSchedules, { loading: loadingSchedules }] = useDb(sleepDb.getSchedules, mockSleep.schedules)
   const [sleeping, setSleeping] = useState(false)
   const [startTime, setStartTime] = useState(null)
   const [elapsed, setElapsed] = useState(0)
@@ -116,6 +118,7 @@ function SleepPage() {
         wakeup: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       }
       setRecords([record, ...records])
+      sleepDb.addRecord(record)
       setElapsed(0)
       setStartTime(null)
     }
@@ -133,6 +136,7 @@ function SleepPage() {
     if (!manualForm.date || !manualForm.bedtime || !manualForm.wakeup) return
     const newRec = { id: Date.now(), ...manualForm }
     setRecords(prev => [newRec, ...prev.filter(r => r.date !== manualForm.date)])
+    sleepDb.addRecord(manualForm)
     setManualForm({ date: '', bedtime: '23:00', wakeup: '07:00' })
     setModal(null)
   }
@@ -141,6 +145,7 @@ function SleepPage() {
   const handleEdit = () => {
     if (!editForm) return
     setRecords(records.map(r => r.id === editForm.id ? { ...editForm } : r))
+    sleepDb.updateRecord(editForm.id, { date: editForm.date, bedtime: editForm.bedtime, wakeup: editForm.wakeup })
     setEditForm(null)
     setModal(null)
   }
@@ -148,6 +153,7 @@ function SleepPage() {
   // Delete
   const handleDelete = (id) => {
     setRecords(records.filter(r => r.id !== id))
+    sleepDb.deleteRecord(id)
     setSelectedDate(null)
   }
 
@@ -156,8 +162,10 @@ function SleepPage() {
     if (!scheduleForm || !scheduleForm.name || scheduleForm.days.length === 0) return
     if (scheduleForm.id) {
       setSchedules(schedules.map(s => s.id === scheduleForm.id ? { ...scheduleForm } : s))
+      sleepDb.updateSchedule(scheduleForm.id, scheduleForm)
     } else {
       setSchedules([...schedules, { ...scheduleForm, id: Date.now() }])
+      sleepDb.addSchedule(scheduleForm)
     }
     setScheduleForm(null)
     setModal(null)
@@ -165,6 +173,7 @@ function SleepPage() {
 
   const handleDeleteSchedule = (id) => {
     setSchedules(schedules.filter(s => s.id !== id))
+    sleepDb.deleteSchedule(id)
   }
 
   // KPIs

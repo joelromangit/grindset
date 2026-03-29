@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import {
   Plus, Check, Trash2, Settings, X, ChevronLeft, ChevronRight,
   Calculator, Leaf, FlaskConical, BookOpen, Globe, Atom,
   CircleDot, CircleCheck, Circle
 } from 'lucide-react'
 import { mockStudy } from '../data/mockData'
+import { useDb } from '../hooks/useDb'
+import { studyDb } from '../lib/db'
 
 const DAYS = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo']
 
@@ -29,7 +31,8 @@ const ICON_OPTIONS = [
 const COLOR_OPTIONS = ['#ff6b6b', '#51cf66', '#4f8cff', '#ffd43b', '#cc5de8', '#ff922b', '#20c997', '#748ffc']
 
 function StudyPage() {
-  const [subjects, setSubjects] = useState(mockStudy.subjects)
+  const fetchSubjects = useCallback(() => studyDb.getSubjects(), [])
+  const [subjects, setSubjects, { loading }] = useDb(fetchSubjects, mockStudy.subjects)
   const [activeSubject, setActiveSubject] = useState(null)
   const [modal, setModal] = useState(null)
   const [newSubject, setNewSubject] = useState({ name: '', color: '#4f8cff', icon: 'calculator' })
@@ -71,30 +74,42 @@ function StudyPage() {
 
   // Actions
   const toggleTask = (subjectId, taskIndex) => {
+    const subject = subjects.find(s => s.id === subjectId)
+    const task = subject?.weeklyPlan[taskIndex]
+    const newDone = !task?.done
     setSubjects(subjects.map(s => {
       if (s.id !== subjectId) return s
       const plan = [...s.weeklyPlan]
-      plan[taskIndex] = { ...plan[taskIndex], done: !plan[taskIndex].done }
+      plan[taskIndex] = { ...plan[taskIndex], done: newDone }
       return { ...s, weeklyPlan: plan }
     }))
+    if (task?.id) studyDb.updateTask(task.id, { done: newDone })
   }
 
   const handleAddSubject = () => {
     if (!newSubject.name) return
-    setSubjects([...subjects, {
-      id: Date.now(),
+    const tempId = Date.now()
+    const created = {
+      id: tempId,
       ...newSubject,
       topics: [],
       weeklyPlan: []
-    }])
+    }
+    setSubjects([...subjects, created])
     setNewSubject({ name: '', color: '#4f8cff', icon: 'calculator' })
     setModal(null)
+    studyDb.addSubject(created).then(data => {
+      if (data) {
+        setSubjects(prev => prev.map(s => s.id === tempId ? { ...s, id: data.id } : s))
+      }
+    })
   }
 
   const handleDeleteSubject = (id) => {
     setSubjects(subjects.filter(s => s.id !== id))
     setActiveSubject(null)
     setModal(null)
+    studyDb.deleteSubject(id)
   }
 
   const handleSaveSubject = (id) => {
@@ -103,26 +118,37 @@ function StudyPage() {
       s.id === id ? { ...s, name: editForm.name, color: editForm.color, icon: editForm.icon } : s
     ))
     setModal(null)
+    studyDb.updateSubject(id, { name: editForm.name, color: editForm.color, icon: editForm.icon })
   }
 
   const handleAddTopic = (subjectId) => {
     if (!newTopic.trim()) return
+    const name = newTopic.trim()
+    const subject = subjects.find(s => s.id === subjectId)
+    const order = subject ? subject.topics.length + 1 : 1
     setSubjects(subjects.map(s =>
       s.id === subjectId
-        ? { ...s, topics: [...s.topics, { name: newTopic.trim(), order: s.topics.length + 1, status: 'pending' }] }
+        ? { ...s, topics: [...s.topics, { name, order, status: 'pending' }] }
         : s
     ))
     setNewTopic('')
+    studyDb.addTopic(subjectId, name, order, 'pending')
   }
 
   const handleDeleteTopic = (subjectId, topicIndex) => {
+    const subject = subjects.find(s => s.id === subjectId)
+    const topicId = subject?.topics[topicIndex]?.id
     setSubjects(subjects.map(s =>
       s.id === subjectId ? { ...s, topics: s.topics.filter((_, i) => i !== topicIndex) } : s
     ))
+    if (topicId) studyDb.deleteTopic(topicId)
   }
 
   const cycleTopic = (subjectId, topicIndex) => {
     const cycle = { pending: 'current', current: 'done', done: 'pending' }
+    const subject = subjects.find(s => s.id === subjectId)
+    const topic = subject?.topics[topicIndex]
+    const newStatus = topic ? cycle[topic.status] : null
     setSubjects(subjects.map(s => {
       if (s.id !== subjectId) return s
       const topics = s.topics.map((t, i) => {
@@ -134,23 +160,39 @@ function StudyPage() {
       })
       return { ...s, topics }
     }))
+    if (topic?.id && newStatus) {
+      studyDb.updateTopic(topic.id, { status: newStatus })
+      // If setting to current, reset any other current topic to pending
+      if (newStatus === 'current' && subject) {
+        subject.topics.forEach((t, i) => {
+          if (i !== topicIndex && t.status === 'current' && t.id) {
+            studyDb.updateTopic(t.id, { status: 'pending' })
+          }
+        })
+      }
+    }
   }
 
   const handleAddTask = (subjectId) => {
     if (!newTask.task) return
+    const taskData = { ...newTask, done: false }
     setSubjects(subjects.map(s => {
       if (s.id !== subjectId) return s
-      return { ...s, weeklyPlan: [...s.weeklyPlan, { ...newTask, done: false }] }
+      return { ...s, weeklyPlan: [...s.weeklyPlan, taskData] }
     }))
     setNewTask({ day: 'Lunes', task: '', topic: '' })
     setModal(null)
+    studyDb.addTask(subjectId, taskData)
   }
 
   const handleDeleteTask = (subjectId, taskIndex) => {
+    const subject = subjects.find(s => s.id === subjectId)
+    const taskId = subject?.weeklyPlan[taskIndex]?.id
     setSubjects(subjects.map(s => {
       if (s.id !== subjectId) return s
       return { ...s, weeklyPlan: s.weeklyPlan.filter((_, i) => i !== taskIndex) }
     }))
+    if (taskId) studyDb.deleteTask(taskId)
   }
 
   // ========== DETAIL VIEW ==========
