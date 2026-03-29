@@ -1,4 +1,4 @@
-# Dia a Dia - Habit Tracker para Selectividad
+# Grindset - Habit Tracker para Selectividad
 
 ## Descripcion
 App web mobile-first para trackear habitos de cara a la selectividad. Prioridad de secciones:
