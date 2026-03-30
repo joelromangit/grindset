@@ -7,8 +7,6 @@ import {
 } from 'lucide-react'
 import { mockStudy } from '../data/mockData'
 import { sendWhatsAppNotification } from '../lib/notifications'
-import { useDb } from '../hooks/useDb'
-import { studyDb } from '../lib/db'
 import { useAdmin } from '../contexts/AdminContext'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 
@@ -384,10 +382,35 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
   )
 }
 
+const STUDY_STORAGE_KEY = 'grindset-study-data'
+
+function loadStudyData() {
+  try {
+    const saved = localStorage.getItem(STUDY_STORAGE_KEY)
+    if (saved) return JSON.parse(saved)
+  } catch {}
+  return mockStudy.subjects
+}
+
+function saveStudyData(subjects) {
+  try {
+    localStorage.setItem(STUDY_STORAGE_KEY, JSON.stringify(subjects))
+  } catch {}
+}
+
 function StudyPage() {
   const { isAdmin } = useAdmin()
-  const fetchSubjects = useCallback(() => studyDb.getSubjects(), [])
-  const [subjects, setSubjects, { loading, error }] = useDb(fetchSubjects, mockStudy.subjects)
+  const [subjects, setSubjectsRaw] = useState(loadStudyData)
+  const loading = false
+  const error = null
+
+  const setSubjects = useCallback((updater) => {
+    setSubjectsRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      saveStudyData(next)
+      return next
+    })
+  }, [])
   const [activeSubject, setActiveSubject] = useState(null)
   const [activeTopic, setActiveTopic] = useState(null)
   const [modal, setModal] = useState(null)
