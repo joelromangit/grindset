@@ -7,8 +7,8 @@ import { mockSleep } from '../data/mockData'
 import { useDb } from '../hooks/useDb'
 import { sleepDb } from '../lib/db'
 
-const DAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
-const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado']
+const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
+const DAY_NAMES = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo']
 
 function calcHours(bedtime, wakeup) {
   const [bh, bm] = bedtime.split(':').map(Number)
@@ -33,14 +33,14 @@ function formatDate(dateStr) {
 
 function getDayName(dateStr) {
   const d = new Date(dateStr + 'T12:00:00')
-  return DAY_NAMES[d.getDay()]
+  return DAY_NAMES[(d.getDay() + 6) % 7]
 }
 
 function getCalendarWeeks(year, month) {
   const first = new Date(year, month, 1)
   const last = new Date(year, month + 1, 0)
   const weeks = []
-  let week = new Array(first.getDay()).fill(null)
+  let week = new Array((first.getDay() + 6) % 7).fill(null)
   for (let d = 1; d <= last.getDate(); d++) {
     week.push(d)
     if (week.length === 7) { weeks.push(week); week = [] }
@@ -725,8 +725,9 @@ function SleepPage() {
               <label>Dias</label>
               <div className="flex gap-6 mt-1">
                 {DAY_LABELS.map((label, i) => {
-                  const active = scheduleForm.days.includes(i)
-                  const taken = schedules.some(s => s.id !== scheduleForm.id && s.days.includes(i))
+                  const jsDay = (i + 1) % 7
+                  const active = scheduleForm.days.includes(jsDay)
+                  const taken = schedules.some(s => s.id !== scheduleForm.id && s.days.includes(jsDay))
                   return (
                     <div
                       key={i}
@@ -735,7 +736,7 @@ function SleepPage() {
                         if (taken) return
                         setScheduleForm({
                           ...scheduleForm,
-                          days: active ? scheduleForm.days.filter(d => d !== i) : [...scheduleForm.days, i]
+                          days: active ? scheduleForm.days.filter(d => d !== jsDay) : [...scheduleForm.days, jsDay]
                         })
                         setFormErrors(prev => { const { days, ...rest } = prev; return rest })
                       }}

@@ -8,7 +8,7 @@ import { mockGym } from '../data/mockData'
 import { useDb } from '../hooks/useDb'
 import { gymDb } from '../lib/db'
 
-const DAY_LABELS = ['D', 'L', 'M', 'X', 'J', 'V', 'S']
+const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 const COLORS = ['#ff6b6b', '#4f8cff', '#51cf66', '#ffd43b', '#cc5de8', '#ff922b', '#20c997', '#748ffc']
 
@@ -16,7 +16,7 @@ function getCalendarWeeks(year, month) {
   const first = new Date(year, month, 1)
   const last = new Date(year, month + 1, 0)
   const weeks = []
-  let week = new Array(first.getDay()).fill(null)
+  let week = new Array((first.getDay() + 6) % 7).fill(null)
   for (let d = 1; d <= last.getDate(); d++) {
     week.push(d)
     if (week.length === 7) { weeks.push(week); week = [] }
@@ -96,7 +96,7 @@ function GymPage() {
     const d = new Date(w.date + 'T12:00:00')
     const now = new Date()
     const weekStart = new Date(now)
-    weekStart.setDate(now.getDate() - now.getDay())
+    weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7))
     weekStart.setHours(0, 0, 0, 0)
     return d >= weekStart
   })
@@ -868,10 +868,10 @@ function WorkoutCard({ workout, expanded, onToggle, onDelete, onEditTimer, getEx
     a + ex.sets.reduce((s, set) => s + set.reps * set.weight, 0), 0)
   const totalSets = workout.exercises.reduce((a, ex) => a + ex.sets.length, 0)
 
-  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado']
+  const dayNames = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo']
   const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
   const d = new Date(workout.date + 'T12:00:00')
-  const dateLabel = `${dayNames[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]}`
+  const dateLabel = `${dayNames[(d.getDay() + 6) % 7]}, ${d.getDate()} ${months[d.getMonth()]}`
 
   return (
     <div style={{

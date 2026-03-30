@@ -5,10 +5,39 @@ import {
   Lock, Unlock, CheckCircle, ChevronDown, ChevronUp,
   Camera, Send, ArrowLeft, Image, Upload
 } from 'lucide-react'
+import katex from 'katex'
 import { mockStudy } from '../data/mockData'
 import { sendWhatsAppNotification } from '../lib/notifications'
 import { useAdmin } from '../contexts/AdminContext'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
+
+function MathText({ text }) {
+  if (!text) return null
+  const parts = text.split(/(\$[^$]+\$)/g)
+  return (
+    <span>
+      {parts.map((part, i) => {
+        if (part.startsWith('$') && part.endsWith('$')) {
+          const tex = part.slice(1, -1)
+          try {
+            return <span key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(tex, { throwOnError: false }) }} />
+          } catch {
+            return <span key={i}>{tex}</span>
+          }
+        }
+        return <span key={i}>{part}</span>
+      })}
+    </span>
+  )
+}
+
+function MathBlock({ tex }) {
+  try {
+    return <div style={{ textAlign: 'center', margin: '12px 0', overflowX: 'auto' }} dangerouslySetInnerHTML={{ __html: katex.renderToString(tex, { throwOnError: false, displayMode: true }) }} />
+  } catch {
+    return <div>{tex}</div>
+  }
+}
 
 const DAYS = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo']
 
@@ -47,6 +76,15 @@ function getTopicStateFromLegacy(status) {
   if (status === 'pending') return 'locked'
   if (TOPIC_STATES.includes(status)) return status
   return 'locked'
+}
+
+function isTopicExercisesComplete(subject, topicName) {
+  if (!topicName || !subject) return false
+  const topic = subject.topics.find(t => t.name === topicName)
+  if (!topic) return false
+  const allExercises = (topic.theoryBlocks || []).flatMap(b => b.exercises || [])
+  if (allExercises.length === 0) return false
+  return allExercises.every(ex => ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected')
 }
 
 function TopicStateBadge({ topic, subjectColor, isAdmin, onClick }) {
@@ -100,10 +138,10 @@ function AutoExerciseMultipleChoice({ exercise, onAnswer }) {
   if (isDone) {
     return (
       <div style={{ padding: '10px 0' }}>
-        <div className="text-0\.85 mb-2">{exercise.question}</div>
+        <div className="text-0\.85 mb-2"><MathText text={exercise.question} /></div>
         <div className="flex items-center gap-2">
           <CheckCircle size={16} style={{ color: 'var(--success)' }} />
-          <span className="text-xs text-success font-600">Correcto: {choices[correctIndex]}</span>
+          <span className="text-xs text-success font-600">Correcto: <MathText text={choices[correctIndex]} /></span>
         </div>
       </div>
     )
@@ -111,7 +149,7 @@ function AutoExerciseMultipleChoice({ exercise, onAnswer }) {
 
   return (
     <div style={{ padding: '10px 0' }}>
-      <div className="text-0\.85 mb-2">{exercise.question}</div>
+      <div className="text-0\.85 mb-2"><MathText text={exercise.question} /></div>
       <div className="flex-col" style={{ gap: 6 }}>
         {choices.map((choice, i) => {
           let bg = 'var(--bg-input)'
@@ -146,7 +184,7 @@ function AutoExerciseMultipleChoice({ exercise, onAnswer }) {
               >
                 {i === selected && <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'white' }} />}
               </div>
-              {choice}
+              <MathText text={choice} />
             </div>
           )
         })}
@@ -193,7 +231,7 @@ function AutoExerciseFillBlank({ exercise, onAnswer }) {
   if (isDone) {
     return (
       <div style={{ padding: '10px 0' }}>
-        <div className="text-0\.85 mb-2">{exercise.question}</div>
+        <div className="text-0\.85 mb-2"><MathText text={exercise.question} /></div>
         <div className="flex items-center gap-2">
           <CheckCircle size={16} style={{ color: 'var(--success)' }} />
           <span className="text-xs text-success font-600">Correcto: {expected}</span>
@@ -204,7 +242,7 @@ function AutoExerciseFillBlank({ exercise, onAnswer }) {
 
   return (
     <div style={{ padding: '10px 0' }}>
-      <div className="text-0\.85 mb-2">{exercise.question}</div>
+      <div className="text-0\.85 mb-2"><MathText text={exercise.question} /></div>
       <div className="flex gap-2">
         <input
           value={answer}
@@ -235,7 +273,7 @@ function ManualExercise({ exercise, onPhotoUpload }) {
 
   return (
     <div style={{ padding: '10px 0' }}>
-      <div className="text-0\.85 mb-2">{exercise.question}</div>
+      <div className="text-0\.85 mb-2"><MathText text={exercise.question} /></div>
       {exercise.photoUrl && (
         <div style={{ marginBottom: 8 }}>
           <img
@@ -324,10 +362,11 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
             fontSize: '0.85rem',
             lineHeight: 1.65,
             color: 'var(--text)',
-            whiteSpace: 'pre-line',
             marginBottom: allExercises.length > 0 ? 16 : 0,
           }}>
-            {block.content}
+            {block.content.split('\n\n').map((paragraph, i) => (
+              <p key={i} style={{ marginBottom: 10 }}><MathText text={paragraph} /></p>
+            ))}
           </div>
 
           {allExercises.length > 0 && (
@@ -433,9 +472,14 @@ function StudyPage() {
     clearErrors()
   }
 
+  const isTaskDone = (task, subject) => {
+    if (task.topic && isTopicExercisesComplete(subject, task.topic)) return true
+    return !!task.done
+  }
+
   const getSubjectProgress = (s) => {
     const total = s.weeklyPlan.length
-    const done = s.weeklyPlan.filter(t => t.done).length
+    const done = s.weeklyPlan.filter(t => isTaskDone(t, s)).length
     return total > 0 ? Math.round((done / total) * 100) : 0
   }
 
@@ -450,14 +494,14 @@ function StudyPage() {
   const getCompletedTopics = (s) => s.topics.filter(t => getTopicStateFromLegacy(t.status) === 'completed').length
 
   const totalTasks = subjects.reduce((a, s) => a + s.weeklyPlan.length, 0)
-  const doneTasks = subjects.reduce((a, s) => a + s.weeklyPlan.filter(t => t.done).length, 0)
+  const doneTasks = subjects.reduce((a, s) => a + s.weeklyPlan.filter(t => isTaskDone(t, s)).length, 0)
   const weekProgress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0
 
-  const dayIndex = new Date().getDay()
-  const todayName = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'][dayIndex]
+  const dayIndex = (new Date().getDay() + 6) % 7
+  const todayName = DAYS[dayIndex]
   const todayTasks = subjects.flatMap(s =>
     s.weeklyPlan
-      .map((t, i) => ({ ...t, subjectId: s.id, subjectName: s.name, subjectColor: s.color, taskIndex: i }))
+      .map((t, i) => ({ ...t, subjectId: s.id, subjectName: s.name, subjectColor: s.color, taskIndex: i, autoComplete: t.topic ? isTopicExercisesComplete(s, t.topic) : false }))
       .filter(t => t.day === todayName)
   )
 
@@ -759,7 +803,7 @@ function StudyPage() {
         )}
 
         <div className="p-16 sticky-top" style={{
-          background: `linear-gradient(135deg, ${detail.color}18 0%, transparent 100%)`,
+          background: `linear-gradient(135deg, ${detail.color}18 0%, var(--bg) 100%)`,
           backdropFilter: 'blur(10px)'
         }}>
           <div className="flex items-center gap-2 mb-3">
@@ -783,25 +827,27 @@ function StudyPage() {
           </div>
         </div>
 
-        {theoryBlocks.length === 0 && (
-          <div className="text-muted text-center" style={{ padding: '40px 16px', fontSize: '0.85rem' }}>
-            Sin contenido teorico todavia.
-          </div>
-        )}
+        <div style={{ padding: '16px 16px 0' }}>
+          {theoryBlocks.length === 0 && (
+            <div className="text-muted text-center" style={{ padding: '40px 0', fontSize: '0.85rem' }}>
+              Sin contenido teorico todavia.
+            </div>
+          )}
 
-        {theoryBlocks.map(block => (
-          <TheoryBlockCard
-            key={block.id}
-            block={block}
-            subjectColor={detail.color}
-            isAdmin={isAdmin}
-            onExerciseAnswer={handleExerciseAnswer}
-            onPhotoUpload={handlePhotoUpload}
-            onSubmitForReview={handleSubmitForReview}
-          />
-        ))}
+          {theoryBlocks.map(block => (
+            <TheoryBlockCard
+              key={block.id}
+              block={block}
+              subjectColor={detail.color}
+              isAdmin={isAdmin}
+              onExerciseAnswer={handleExerciseAnswer}
+              onPhotoUpload={handlePhotoUpload}
+              onSubmitForReview={handleSubmitForReview}
+            />
+          ))}
 
-        <div style={{ height: 24 }} />
+          <div style={{ height: 24 }} />
+        </div>
       </>
     )
   }
@@ -809,15 +855,16 @@ function StudyPage() {
   // ========== DETAIL VIEW ==========
   if (detail) {
     const Icon = ICONS[detail.icon] || Calculator
-    const subDone = detail.weeklyPlan.filter(t => t.done).length
+    const subDone = detail.weeklyPlan.filter(t => isTaskDone(t, detail)).length
     const subTotal = detail.weeklyPlan.length
     const subProgress = subTotal > 0 ? Math.round((subDone / subTotal) * 100) : 0
     const currentTopic = getCurrentTopic(detail)
 
     const tasksByDay = {}
     detail.weeklyPlan.forEach((task, i) => {
+      const autoComplete = task.topic ? isTopicExercisesComplete(detail, task.topic) : false
       if (!tasksByDay[task.day]) tasksByDay[task.day] = []
-      tasksByDay[task.day].push({ ...task, originalIndex: i })
+      tasksByDay[task.day].push({ ...task, originalIndex: i, autoComplete })
     })
 
     return (
@@ -938,60 +985,165 @@ function StudyPage() {
           )}
         </div>
 
-        {DAYS.filter(d => tasksByDay[d]).map(day => (
-          <div key={day} className="mx-16">
-            <div className="font-700 text-uppercase tracking-wide opacity-70" style={{
-              fontSize: '0.68rem',
-              color: detail.color,
-              padding: '10px 0 4px',
-            }}>
-              {day}
-            </div>
-            {tasksByDay[day].map(task => (
-              <div key={task.originalIndex} className="flex items-center gap-10" style={{
-                padding: '8px 0',
-                borderBottom: '1px solid var(--border)'
-              }}>
-                <div
-                  className={`checkbox ${task.done ? 'checked' : ''}`}
-                  style={!task.done ? { borderColor: `${detail.color}60` } : {}}
-                  onClick={() => toggleTask(detail.id, task.originalIndex)}
-                >
-                  {task.done && <Check size={12} color="white" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <span style={{
-                    fontSize: '0.85rem',
-                    textDecoration: task.done ? 'line-through' : 'none',
-                    color: task.done ? 'var(--text-muted)' : 'var(--text)'
-                  }}>
-                    {task.task}
-                  </span>
-                  {task.topic && (
-                    <span style={{
-                      marginLeft: 8,
-                      padding: '1px 6px',
+        {/* Weekly calendar strip */}
+        <div className="px-16" style={{ paddingBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {(() => {
+              const now = new Date()
+              const mondayOffset = (now.getDay() + 6) % 7
+              const monday = new Date(now)
+              monday.setDate(now.getDate() - mondayOffset)
+              const SHORT_DAYS = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
+              return SHORT_DAYS.map((shortDay, i) => {
+                const d = new Date(monday)
+                d.setDate(monday.getDate() + i)
+                const isToday = i === mondayOffset
+                const dayName = DAYS[i]
+                const dayTasks = tasksByDay[dayName] || []
+                const allDone = dayTasks.length > 0 && dayTasks.every(t => t.autoComplete || t.done)
+                const hasTasks = dayTasks.length > 0
+                const someDone = dayTasks.some(t => t.autoComplete || t.done)
+
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      flex: 1,
+                      textAlign: 'center',
+                      padding: '6px 2px',
                       borderRadius: 8,
+                      background: isToday ? `${detail.color}18` : 'transparent',
+                      border: isToday ? `2px solid ${detail.color}40` : '2px solid transparent',
+                    }}
+                  >
+                    <div style={{
                       fontSize: '0.6rem',
-                      background: `${detail.color}15`,
-                      color: `${detail.color}cc`
+                      fontWeight: 700,
+                      color: isToday ? detail.color : 'var(--text-muted)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px',
                     }}>
-                      {task.topic}
+                      {shortDay}
+                    </div>
+                    <div style={{
+                      fontSize: '0.95rem',
+                      fontWeight: isToday ? 800 : 500,
+                      color: isToday ? detail.color : 'var(--text)',
+                      marginTop: 2,
+                    }}>
+                      {d.getDate()}
+                    </div>
+                    {hasTasks && (
+                      <div style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        margin: '3px auto 0',
+                        background: allDone ? 'var(--success)' : someDone ? 'var(--warning)' : `${detail.color}60`,
+                      }} />
+                    )}
+                  </div>
+                )
+              })
+            })()}
+          </div>
+
+          {/* Tasks for each day under the calendar */}
+          {DAYS.map((dayName, i) => {
+            const dayTasks = tasksByDay[dayName]
+            if (!dayTasks || dayTasks.length === 0) return null
+            const now = new Date()
+            const mondayOffset = (now.getDay() + 6) % 7
+            const isToday = i === mondayOffset
+
+            return (
+              <div key={dayName} style={{ marginTop: i === DAYS.findIndex(d => tasksByDay[d]) ? 8 : 0 }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 0 4px',
+                }}>
+                  <span className="font-700 text-uppercase tracking-wide" style={{
+                    fontSize: '0.68rem',
+                    color: isToday ? detail.color : 'var(--text-muted)',
+                  }}>
+                    {dayName}
+                  </span>
+                  {isToday && (
+                    <span style={{
+                      fontSize: '0.55rem',
+                      fontWeight: 700,
+                      padding: '1px 6px',
+                      borderRadius: 6,
+                      background: `${detail.color}20`,
+                      color: detail.color,
+                      textTransform: 'uppercase',
+                    }}>
+                      Hoy
                     </span>
                   )}
                 </div>
-                {isAdmin && (
-                  <button
-                    className="btn-ghost muted opacity-40"
-                    onClick={() => handleDeleteTask(detail.id, task.originalIndex)}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                )}
+                {dayTasks.map(task => {
+                  const done = task.autoComplete || task.done
+                  const canToggle = isAdmin || !task.topic
+                  return (
+                    <div key={task.originalIndex} className="flex items-center gap-10" style={{
+                      padding: '8px 0',
+                      borderBottom: '1px solid var(--border)'
+                    }}>
+                      <div
+                        className={`checkbox ${done ? 'checked' : ''}`}
+                        style={!done ? { borderColor: `${detail.color}60` } : task.autoComplete ? { background: 'var(--success)', borderColor: 'var(--success)' } : {}}
+                        onClick={canToggle ? () => toggleTask(detail.id, task.originalIndex) : undefined}
+                      >
+                        {done && <Check size={12} color="white" />}
+                      </div>
+                      <div
+                        className="flex-1 min-w-0"
+                        style={{ cursor: task.topic ? 'pointer' : 'default' }}
+                        onClick={() => {
+                          if (task.topic) {
+                            const topic = detail.topics.find(t => t.name === task.topic)
+                            if (topic) openTopic(topic)
+                          }
+                        }}
+                      >
+                        <span style={{
+                          fontSize: '0.85rem',
+                          textDecoration: done ? 'line-through' : 'none',
+                          color: done ? 'var(--text-muted)' : 'var(--text)'
+                        }}>
+                          {task.task}
+                        </span>
+                        {task.topic && (
+                          <span style={{
+                            marginLeft: 8,
+                            padding: '1px 6px',
+                            borderRadius: 8,
+                            fontSize: '0.6rem',
+                            background: task.autoComplete ? 'rgba(0,206,201,0.15)' : `${detail.color}15`,
+                            color: task.autoComplete ? 'var(--success)' : `${detail.color}cc`
+                          }}>
+                            {task.topic}
+                          </span>
+                        )}
+                      </div>
+                      {isAdmin && (
+                        <button
+                          className="btn-ghost muted opacity-40"
+                          onClick={() => handleDeleteTask(detail.id, task.originalIndex)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-            ))}
-          </div>
-        ))}
+            )
+          })}
+        </div>
 
         {detail.weeklyPlan.length === 0 && (
           <div className="text-muted text-center" style={{ padding: '30px 16px', fontSize: '0.85rem' }}>
@@ -1197,7 +1349,7 @@ function StudyPage() {
         const current = getCurrentTopic(subject)
         const next = getNextTopic(subject)
         const doneTops = getCompletedTopics(subject)
-        const subDone = subject.weeklyPlan.filter(t => t.done).length
+        const subDone = subject.weeklyPlan.filter(t => isTaskDone(t, subject)).length
         const subTotal = subject.weeklyPlan.length
 
         return (
@@ -1285,35 +1437,39 @@ function StudyPage() {
             <span className="section-title">Hoy - {todayName}</span>
           </div>
           <div className="card">
-            {todayTasks.map((task, i) => (
-              <div key={i} className="flex items-center gap-10" style={{
-                padding: '8px 0',
-                borderBottom: i < todayTasks.length - 1 ? '1px solid var(--border)' : 'none'
-              }}>
-                <div
-                  className={`checkbox ${task.done ? 'checked' : ''}`}
-                  style={!task.done ? { borderColor: `${task.subjectColor}60` } : {}}
-                  onClick={() => toggleTask(task.subjectId, task.taskIndex)}
-                >
-                  {task.done && <Check size={12} color="white" />}
-                </div>
-                <div className="flex-1">
-                  <span style={{
-                    fontSize: '0.85rem',
-                    textDecoration: task.done ? 'line-through' : 'none',
-                    color: task.done ? 'var(--text-muted)' : 'var(--text)'
+            {todayTasks.map((task, i) => {
+              const done = task.autoComplete || task.done
+              const canToggle = isAdmin || !task.topic
+              return (
+                <div key={i} className="flex items-center gap-10" style={{
+                  padding: '8px 0',
+                  borderBottom: i < todayTasks.length - 1 ? '1px solid var(--border)' : 'none'
+                }}>
+                  <div
+                    className={`checkbox ${done ? 'checked' : ''}`}
+                    style={!done ? { borderColor: `${task.subjectColor}60` } : task.autoComplete ? { background: 'var(--success)', borderColor: 'var(--success)' } : {}}
+                    onClick={canToggle ? () => toggleTask(task.subjectId, task.taskIndex) : undefined}
+                  >
+                    {done && <Check size={12} color="white" />}
+                  </div>
+                  <div className="flex-1">
+                    <span style={{
+                      fontSize: '0.85rem',
+                      textDecoration: done ? 'line-through' : 'none',
+                      color: done ? 'var(--text-muted)' : 'var(--text)'
+                    }}>
+                      {task.task}
+                    </span>
+                  </div>
+                  <span className="font-700" style={{
+                    padding: '2px 8px', borderRadius: 10, fontSize: '0.6rem',
+                    background: `${task.subjectColor}18`, color: task.subjectColor
                   }}>
-                    {task.task}
+                    {task.subjectName.substring(0, 4)}
                   </span>
                 </div>
-                <span className="font-700" style={{
-                  padding: '2px 8px', borderRadius: 10, fontSize: '0.6rem',
-                  background: `${task.subjectColor}18`, color: task.subjectColor
-                }}>
-                  {task.subjectName.substring(0, 4)}
-                </span>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </>
       )}
