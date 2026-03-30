@@ -3,7 +3,7 @@ import {
   Plus, Check, Trash2, Settings, X, ChevronLeft, ChevronRight,
   Calculator, Leaf, FlaskConical, BookOpen, Globe, Atom,
   Lock, Unlock, CheckCircle, ChevronDown, ChevronUp,
-  Camera, Send, ArrowLeft, Image, Upload
+  Camera, Send, ArrowLeft, Image, Upload, Zap
 } from 'lucide-react'
 import katex from 'katex'
 import { mockStudy } from '../data/mockData'
@@ -318,10 +318,13 @@ function ManualExercise({ exercise, onPhotoUpload }) {
 }
 
 function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPhotoUpload, onSubmitForReview, expandedBlockId }) {
-  const [expanded, setExpanded] = useState(expandedBlockId === block.id)
+  const blockStatus = block.status || 'available'
+  const isLocked = blockStatus === 'locked' && !isAdmin
+  const isCompleted = blockStatus === 'completed'
+  const [expanded, setExpanded] = useState(expandedBlockId === block.id && !isLocked)
   const allExercises = block.exercises || []
-  const allDone = allExercises.length > 0 && allExercises.every(ex => ex.status === 'done' || ex.status === 'submitted')
-  const allSubmitted = allExercises.length > 0 && allExercises.every(ex => ex.status === 'submitted')
+  const allDone = allExercises.length > 0 && allExercises.every(ex => ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected')
+  const allSubmitted = allExercises.length > 0 && allExercises.every(ex => ex.status === 'submitted' || ex.status === 'corrected')
   const [showSuccess, setShowSuccess] = useState(false)
 
   const handleSubmit = () => {
@@ -335,25 +338,44 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
       style={{
         margin: '0 16px 10px',
         borderRadius: 'var(--radius)',
-        border: `1px solid var(--border)`,
+        border: isCompleted ? '1px solid rgba(0,206,201,0.3)' : `1px solid var(--border)`,
         background: 'var(--bg-card)',
         overflow: 'hidden',
+        opacity: isLocked ? 0.5 : 1,
       }}
     >
       <div
-        onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-10 cursor-pointer"
+        onClick={() => !isLocked && setExpanded(!expanded)}
+        className={`flex items-center gap-10${isLocked ? '' : ' cursor-pointer'}`}
         style={{ padding: '14px 16px' }}
       >
         <div className="flex-1 min-w-0">
-          <div className="font-600" style={{ fontSize: '0.88rem' }}>{block.title}</div>
+          <div className="flex items-center gap-2">
+            <span className="font-600" style={{ fontSize: '0.88rem' }}>{block.title}</span>
+            {isCompleted && <CheckCircle size={14} style={{ color: 'var(--success)', flexShrink: 0 }} />}
+            {blockStatus === 'locked' && <Lock size={14} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+          </div>
           <div className="text-xs text-muted mt-1">
-            {allExercises.length} ejercicios
-            {allDone && !allSubmitted && ' - Listos para enviar'}
-            {allSubmitted && ' - Enviados'}
+            {isLocked ? (
+              <span style={{ color: 'var(--text-muted)' }}>Bloqueado</span>
+            ) : isCompleted ? (
+              <span style={{ color: 'var(--success)' }}>Completado</span>
+            ) : (
+              <>
+                {allExercises.length} ejercicios
+                {allDone && !allSubmitted && ' - Listos para enviar'}
+                {allSubmitted && ' - Enviados'}
+              </>
+            )}
           </div>
         </div>
-        {expanded ? <ChevronUp size={18} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={18} style={{ color: 'var(--text-muted)' }} />}
+        {isLocked ? (
+          <Lock size={18} style={{ color: 'var(--text-muted)' }} />
+        ) : expanded ? (
+          <ChevronUp size={18} style={{ color: 'var(--text-muted)' }} />
+        ) : (
+          <ChevronDown size={18} style={{ color: 'var(--text-muted)' }} />
+        )}
       </div>
 
       {expanded && (
@@ -422,7 +444,7 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
 }
 
 const STUDY_STORAGE_KEY = 'grindset-study-data'
-const STUDY_DATA_VERSION = 2
+const STUDY_DATA_VERSION = 3
 
 function loadStudyData() {
   try {
@@ -456,6 +478,55 @@ function StudyPage() {
       return next
     })
   }, [])
+  const checkAndUnlockBlocks = useCallback((subjectId) => {
+    setSubjects(prev => prev.map(s => {
+      if (s.id !== subjectId) return s
+      let topicsChanged = false
+      const updatedTopics = s.topics.map((topic, topicIdx) => {
+        const state = getTopicStateFromLegacy(topic.status)
+        if (state !== 'in_progress') return topic
+        const blocks = topic.theoryBlocks || []
+        if (blocks.length === 0) return topic
+        let blocksChanged = false
+        const updatedBlocks = blocks.map((block, blockIdx) => {
+          if (block.status === 'completed' || block.status === 'locked') return block
+          const exercises = block.exercises || []
+          if (exercises.length === 0) return block
+          const allComplete = exercises.every(ex => ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected')
+          if (!allComplete) return block
+          blocksChanged = true
+          return { ...block, status: 'completed' }
+        })
+        if (blocksChanged) {
+          for (let i = 0; i < updatedBlocks.length; i++) {
+            if (updatedBlocks[i].status === 'completed' && i + 1 < updatedBlocks.length && updatedBlocks[i + 1].status === 'locked') {
+              updatedBlocks[i + 1] = { ...updatedBlocks[i + 1], status: 'available' }
+            }
+          }
+        }
+        const allBlocksCompleted = updatedBlocks.length > 0 && updatedBlocks.every(b => b.status === 'completed')
+        if (allBlocksCompleted) {
+          topicsChanged = true
+          return { ...topic, status: 'completed', theoryBlocks: updatedBlocks }
+        }
+        if (blocksChanged) {
+          return { ...topic, theoryBlocks: updatedBlocks }
+        }
+        return topic
+      })
+      if (topicsChanged) {
+        for (let i = 0; i < updatedTopics.length; i++) {
+          if (getTopicStateFromLegacy(updatedTopics[i].status) === 'completed') {
+            if (i + 1 < updatedTopics.length && getTopicStateFromLegacy(updatedTopics[i + 1].status) === 'locked') {
+              updatedTopics[i + 1] = { ...updatedTopics[i + 1], status: 'available' }
+            }
+          }
+        }
+      }
+      return { ...s, topics: updatedTopics }
+    }))
+  }, [setSubjects])
+
   const [activeSubject, setActiveSubject] = useState(null)
   const [activeTopic, setActiveTopic] = useState(null)
   const [expandedBlockId, setExpandedBlockId] = useState(null)
@@ -692,6 +763,7 @@ function StudyPage() {
         }))
       }
     }))
+    setTimeout(() => checkAndUnlockBlocks(activeSubject), 0)
   }
 
   const handlePhotoUpload = async (exerciseId, file) => {
@@ -723,6 +795,7 @@ function StudyPage() {
         }))
       }
     }))
+    setTimeout(() => checkAndUnlockBlocks(activeSubject), 0)
   }
 
   const handleSubmitForReview = (blockId) => {
@@ -762,6 +835,7 @@ function StudyPage() {
     }))
 
     sendWhatsAppNotification(`Nuevos ejercicios para corregir: ${topicName} - ${blockTitle} (${exerciseCount} ejercicios)`)
+    setTimeout(() => checkAndUnlockBlocks(activeSubject), 0)
   }
 
   const handleAddTask = (subjectId) => {
@@ -871,7 +945,16 @@ function StudyPage() {
 
     const tasksByDay = {}
     detail.weeklyPlan.forEach((task, i) => {
-      const autoComplete = task.topic ? isTopicExercisesComplete(detail, task.topic) : false
+      let autoComplete = false
+      if (task.topic && task.blockId) {
+        const topic = detail.topics.find(t => t.name === task.topic)
+        if (topic) {
+          const block = (topic.theoryBlocks || []).find(b => b.id === task.blockId)
+          autoComplete = block ? block.status === 'completed' : false
+        }
+      } else if (task.topic) {
+        autoComplete = isTopicExercisesComplete(detail, task.topic)
+      }
       if (!tasksByDay[task.day]) tasksByDay[task.day] = []
       tasksByDay[task.day].push({ ...task, originalIndex: i, autoComplete })
     })
@@ -994,6 +1077,33 @@ function StudyPage() {
           )}
         </div>
 
+        {/* Advance tracking badge */}
+        {(() => {
+          const todayIdx = (new Date().getDay() + 6) % 7
+          let daysAhead = 0
+          DAYS.forEach((dayName, i) => {
+            if (i <= todayIdx) return
+            const dayTasks = tasksByDay[dayName] || []
+            const hasBlockTasks = dayTasks.some(t => t.blockId)
+            if (!hasBlockTasks) return
+            const allBlockTasksDone = dayTasks.filter(t => t.blockId).every(t => {
+              if (t.autoComplete || t.done) return true
+              const topic = detail.topics.find(tp => tp.name === t.topic)
+              if (!topic) return false
+              const block = (topic.theoryBlocks || []).find(b => b.id === t.blockId)
+              return block && block.status === 'completed'
+            })
+            if (allBlockTasksDone) daysAhead++
+          })
+          if (daysAhead <= 0) return null
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: 8, margin: '0 16px 8px', color: '#f59e0b', fontSize: '0.8rem', fontWeight: 700 }}>
+              <Zap size={14} />
+              +{daysAhead} {daysAhead === 1 ? 'dia' : 'dias'} adelantado
+            </div>
+          )
+        })()}
+
         {/* Weekly calendar strip */}
         <div className="px-16" style={{ paddingBottom: 8 }}>
           <div style={{ display: 'flex', gap: 4 }}>
@@ -1012,6 +1122,8 @@ function StudyPage() {
                 const allDone = dayTasks.length > 0 && dayTasks.every(t => t.autoComplete || t.done)
                 const hasTasks = dayTasks.length > 0
                 const someDone = dayTasks.some(t => t.autoComplete || t.done)
+                const isFuture = i > mondayOffset
+                const isFutureCompleted = isFuture && allDone && hasTasks
 
                 return (
                   <div
@@ -1021,14 +1133,14 @@ function StudyPage() {
                       textAlign: 'center',
                       padding: '6px 2px',
                       borderRadius: 8,
-                      background: isToday ? `${detail.color}18` : 'transparent',
-                      border: isToday ? `2px solid ${detail.color}40` : '2px solid transparent',
+                      background: isFutureCompleted ? 'rgba(245, 158, 11, 0.12)' : isToday ? `${detail.color}18` : 'transparent',
+                      border: isFutureCompleted ? '2px solid rgba(245, 158, 11, 0.4)' : isToday ? `2px solid ${detail.color}40` : '2px solid transparent',
                     }}
                   >
                     <div style={{
                       fontSize: '0.6rem',
                       fontWeight: 700,
-                      color: isToday ? detail.color : 'var(--text-muted)',
+                      color: isFutureCompleted ? '#f59e0b' : isToday ? detail.color : 'var(--text-muted)',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
                     }}>
@@ -1036,10 +1148,11 @@ function StudyPage() {
                     </div>
                     <div style={{
                       fontSize: '0.95rem',
-                      fontWeight: isToday ? 800 : 500,
-                      color: isToday ? detail.color : 'var(--text)',
+                      fontWeight: isFutureCompleted || isToday ? 800 : 500,
+                      color: isFutureCompleted ? '#f59e0b' : isToday ? detail.color : 'var(--text)',
                       marginTop: 2,
                     }}>
+                      {isFutureCompleted ? <Zap size={14} style={{ display: 'inline' }} /> : null}
                       {d.getDate()}
                     </div>
                     {hasTasks && (
@@ -1048,7 +1161,7 @@ function StudyPage() {
                         height: 6,
                         borderRadius: '50%',
                         margin: '3px auto 0',
-                        background: allDone ? 'var(--success)' : someDone ? 'var(--warning)' : `${detail.color}60`,
+                        background: isFutureCompleted ? '#f59e0b' : allDone ? 'var(--success)' : someDone ? 'var(--warning)' : `${detail.color}60`,
                       }} />
                     )}
                   </div>
