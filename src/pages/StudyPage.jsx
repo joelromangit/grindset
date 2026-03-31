@@ -3,7 +3,8 @@ import {
   Plus, Check, Trash2, Settings, X, ChevronLeft, ChevronRight,
   Calculator, Leaf, FlaskConical, BookOpen, Globe, Atom,
   Lock, Unlock, CheckCircle, ChevronDown, ChevronUp,
-  Camera, Send, ArrowLeft, Image, Upload, Zap
+  Camera, Send, ArrowLeft, Image, Upload, Zap,
+  Clock, MessageSquare, ThumbsUp, ThumbsDown, ClipboardList
 } from 'lucide-react'
 import katex from 'katex'
 import { mockStudy } from '../data/mockData'
@@ -116,6 +117,116 @@ function TopicStateBadge({ topic, subjectColor, isAdmin, onClick }) {
   )
 }
 
+// ========== ANSWER NORMALIZATION (Task 2) ==========
+function normalizeAnswer(raw) {
+  if (!raw) return ''
+  let s = raw.trim().toLowerCase()
+  // Strip surrounding $ from LaTeX
+  if (s.startsWith('$') && s.endsWith('$')) s = s.slice(1, -1)
+  // Convert LaTeX fractions: \frac{a}{b} -> a/b
+  s = s.replace(/\\frac\s*\{([^}]*)\}\s*\{([^}]*)\}/g, '$1/$2')
+  // Remove common LaTeX commands
+  s = s.replace(/\\(left|right|,|;|!|quad|qquad|cdot|times)/g, '')
+  // Remove remaining backslashes from LaTeX
+  s = s.replace(/\\/g, '')
+  // Normalize whitespace
+  s = s.replace(/\s+/g, ' ').trim()
+  // Normalize special characters
+  s = s.replace(/[''`]/g, "'")
+  s = s.replace(/[""«»]/g, '"')
+  return s
+}
+
+function parseNumericValue(s) {
+  // Try to evaluate as a fraction a/b
+  const fractionMatch = s.match(/^(-?\d+(?:\.\d+)?)\s*\/\s*(-?\d+(?:\.\d+)?)$/)
+  if (fractionMatch) {
+    const num = parseFloat(fractionMatch[1])
+    const den = parseFloat(fractionMatch[2])
+    if (den !== 0) return num / den
+  }
+  // Try comma as decimal separator
+  const commaNum = s.replace(',', '.')
+  const val = parseFloat(commaNum)
+  if (!isNaN(val)) return val
+  return null
+}
+
+function answersMatch(student, expected) {
+  const normStudent = normalizeAnswer(student)
+  const normExpected = normalizeAnswer(expected)
+  // Direct string match
+  if (normStudent === normExpected) return true
+  // Numeric comparison with tolerance
+  const numStudent = parseNumericValue(normStudent)
+  const numExpected = parseNumericValue(normExpected)
+  if (numStudent !== null && numExpected !== null) {
+    return Math.abs(numStudent - numExpected) < 0.001
+  }
+  return false
+}
+
+// ========== PER-TOPIC WEEKLY PLAN GENERATION (Task 1) ==========
+function generateTopicPlan(topic) {
+  const blocks = topic.theoryBlocks || []
+  if (blocks.length === 0) return []
+  return blocks.map((block, i) => ({
+    day: DAYS[i % 7],
+    week: Math.floor(i / 7),
+    task: block.title,
+    topic: topic.name,
+    blockId: block.id,
+    done: block.status === 'completed',
+    autoComplete: block.status === 'completed',
+  }))
+}
+
+// ========== SUBMITTED EXERCISES STORAGE (Task 3) ==========
+const SUBMISSIONS_KEY = 'submitted_exercises'
+
+function loadSubmissions() {
+  try {
+    const saved = localStorage.getItem(SUBMISSIONS_KEY)
+    return saved ? JSON.parse(saved) : []
+  } catch { return [] }
+}
+
+function saveSubmissions(submissions) {
+  try {
+    localStorage.setItem(SUBMISSIONS_KEY, JSON.stringify(submissions))
+  } catch {}
+}
+
+function SubmissionStatusBadge({ exerciseId }) {
+  const submissions = loadSubmissions()
+  const sub = submissions.find(s => s.exerciseId === exerciseId)
+  if (!sub) return null
+  if (sub.status === 'approved') {
+    return (
+      <div className="flex items-center gap-1 mt-1">
+        <ThumbsUp size={12} style={{ color: 'var(--success)' }} />
+        <span className="text-xs text-success font-600">Aprobado</span>
+        {sub.feedback && <span className="text-xs text-muted"> - {sub.feedback}</span>}
+      </div>
+    )
+  }
+  if (sub.status === 'rejected') {
+    return (
+      <div className="flex items-center gap-1 mt-1">
+        <ThumbsDown size={12} style={{ color: 'var(--danger)' }} />
+        <span className="text-xs text-danger font-600">Rechazado</span>
+        {sub.feedback && <span className="text-xs text-muted"> - {sub.feedback}</span>}
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-1 mt-1">
+      <Clock size={12} style={{ color: 'var(--warning)' }} />
+      <span className="text-xs text-warning font-600">Pendiente de correccion</span>
+    </div>
+  )
+}
+
 function AutoExerciseMultipleChoice({ exercise, onAnswer }) {
   const [selected, setSelected] = useState(null)
   const [submitted, setSubmitted] = useState(false)
@@ -213,12 +324,12 @@ function AutoExerciseFillBlank({ exercise, onAnswer }) {
   const isDone = exercise.status === 'done' || exercise.status === 'submitted'
   const expected = exercise.autoConfig.expectedAnswer
 
-  const isCorrect = submitted && answer.trim().toLowerCase() === expected.trim().toLowerCase()
+  const isCorrect = submitted && answersMatch(answer, expected)
 
   const handleSubmit = () => {
     if (!answer.trim()) return
     setSubmitted(true)
-    if (answer.trim().toLowerCase() === expected.trim().toLowerCase()) {
+    if (answersMatch(answer, expected)) {
       onAnswer(exercise.id, answer.trim(), true)
     }
   }
@@ -284,9 +395,12 @@ function ManualExercise({ exercise, onPhotoUpload }) {
         </div>
       )}
       {exercise.status === 'submitted' && (
-        <div className="flex items-center gap-2">
-          <Send size={14} style={{ color: 'var(--primary-light)' }} />
-          <span className="text-xs text-primary-light font-600">Enviado para correccion</span>
+        <div>
+          <div className="flex items-center gap-2">
+            <Send size={14} style={{ color: 'var(--primary-light)' }} />
+            <span className="text-xs text-primary-light font-600">Enviado para correccion</span>
+          </div>
+          <SubmissionStatusBadge exerciseId={exercise.id} />
         </div>
       )}
       {!exercise.photoUrl && exercise.status !== 'submitted' && (
@@ -444,7 +558,7 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
 }
 
 const STUDY_STORAGE_KEY = 'grindset-study-data'
-const STUDY_DATA_VERSION = 3
+const STUDY_DATA_VERSION = 5
 
 function loadStudyData() {
   try {
@@ -536,6 +650,10 @@ function StudyPage() {
   const [newTopic, setNewTopic] = useState('')
   const [editForm, setEditForm] = useState(null)
   const [showError, setShowError] = useState(true)
+  const [selectedPlanTopic, setSelectedPlanTopic] = useState(null)
+  const [showCorrections, setShowCorrections] = useState(false)
+  const [submissions, setSubmissions] = useState(loadSubmissions)
+  const [feedbackText, setFeedbackText] = useState('')
   const [errors, setErrors] = useState({})
 
   const detail = activeSubject ? subjects.find(s => s.id === activeSubject) : null
@@ -555,9 +673,29 @@ function StudyPage() {
     return !!task.done
   }
 
+  const getSubjectAllTasks = (s) => {
+    // Generate plans for the first topic with blocks (week 0 only) + manual tasks
+    const topicsWithBlocks = s.topics.filter(t => (t.theoryBlocks || []).length > 0)
+    const firstTopic = topicsWithBlocks.length > 0 ? topicsWithBlocks[0] : null
+    const topicPlan = firstTopic ? generateTopicPlan(firstTopic).filter(t => t.week === 0) : []
+    const manualTasks = s.weeklyPlan.filter(t => !t.blockId)
+    return [...topicPlan, ...manualTasks]
+  }
+
   const getSubjectProgress = (s) => {
-    const total = s.weeklyPlan.length
-    const done = s.weeklyPlan.filter(t => isTaskDone(t, s)).length
+    const allTasks = getSubjectAllTasks(s)
+    const total = allTasks.length
+    const done = allTasks.filter(t => {
+      if (t.autoComplete || t.done) return true
+      if (t.blockId && t.topic) {
+        const tp = s.topics.find(tt => tt.name === t.topic)
+        if (tp) {
+          const block = (tp.theoryBlocks || []).find(b => b.id === t.blockId)
+          if (block && block.status === 'completed') return true
+        }
+      }
+      return isTaskDone(t, s)
+    }).length
     return total > 0 ? Math.round((done / total) * 100) : 0
   }
 
@@ -571,17 +709,43 @@ function StudyPage() {
   }
   const getCompletedTopics = (s) => s.topics.filter(t => getTopicStateFromLegacy(t.status) === 'completed').length
 
-  const totalTasks = subjects.reduce((a, s) => a + s.weeklyPlan.length, 0)
-  const doneTasks = subjects.reduce((a, s) => a + s.weeklyPlan.filter(t => isTaskDone(t, s)).length, 0)
+  const totalTasks = subjects.reduce((a, s) => a + getSubjectAllTasks(s).length, 0)
+  const doneTasks = subjects.reduce((a, s) => {
+    const allTasks = getSubjectAllTasks(s)
+    return a + allTasks.filter(t => {
+      if (t.autoComplete || t.done) return true
+      if (t.blockId && t.topic) {
+        const tp = s.topics.find(tt => tt.name === t.topic)
+        if (tp) {
+          const block = (tp.theoryBlocks || []).find(b => b.id === t.blockId)
+          if (block && block.status === 'completed') return true
+        }
+      }
+      return isTaskDone(t, s)
+    }).length
+  }, 0)
   const weekProgress = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0
 
   const dayIndex = (new Date().getDay() + 6) % 7
   const todayName = DAYS[dayIndex]
-  const todayTasks = subjects.flatMap(s =>
-    s.weeklyPlan
-      .map((t, i) => ({ ...t, subjectId: s.id, subjectName: s.name, subjectColor: s.color, taskIndex: i, autoComplete: t.topic ? isTopicExercisesComplete(s, t.topic) : false }))
+  const todayTasks = subjects.flatMap(s => {
+    const allTasks = getSubjectAllTasks(s)
+    return allTasks
+      .map((t, i) => {
+        let autoComplete = t.autoComplete || false
+        if (t.blockId && t.topic) {
+          const tp = s.topics.find(tt => tt.name === t.topic)
+          if (tp) {
+            const block = (tp.theoryBlocks || []).find(b => b.id === t.blockId)
+            autoComplete = block ? block.status === 'completed' : false
+          }
+        } else if (t.topic) {
+          autoComplete = isTopicExercisesComplete(s, t.topic)
+        }
+        return { ...t, subjectId: s.id, subjectName: s.name, subjectColor: s.color, taskIndex: i, autoComplete }
+      })
       .filter(t => t.day === todayName)
-  )
+  })
 
   const validateAddSubject = () => {
     const errs = {}
@@ -803,17 +967,41 @@ function StudyPage() {
     let topicName = ''
     let blockTitle = ''
     let exerciseCount = 0
+    const exercisesToSubmit = []
     if (subject) {
       for (const t of subject.topics || []) {
         const block = (t.theoryBlocks || []).find(b => b.id === blockId)
         if (block) {
           topicName = t.name || t.title || ''
           blockTitle = block.title || ''
-          exerciseCount = (block.exercises || []).filter(ex => ex.status === 'done').length
+          const doneExercises = (block.exercises || []).filter(ex => ex.status === 'done')
+          exerciseCount = doneExercises.length
+          doneExercises.forEach(ex => {
+            exercisesToSubmit.push({
+              exerciseId: ex.id,
+              question: ex.question,
+              answer: ex.studentAnswer || ex.photoUrl || '',
+              photoUrl: ex.photoUrl || null,
+              type: ex.type,
+              subjectName: subject.name,
+              topicName,
+              blockTitle,
+              timestamp: new Date().toISOString(),
+              status: 'pending',
+              feedback: '',
+            })
+          })
           break
         }
       }
     }
+
+    // Store submissions in localStorage
+    const existing = loadSubmissions()
+    const newSubmissions = exercisesToSubmit.filter(
+      sub => !existing.some(e => e.exerciseId === sub.exerciseId)
+    )
+    saveSubmissions([...existing, ...newSubmissions])
 
     setSubjects(subjects.map(s => {
       if (s.id !== activeSubject) return s
@@ -938,18 +1126,42 @@ function StudyPage() {
   // ========== DETAIL VIEW ==========
   if (detail) {
     const Icon = ICONS[detail.icon] || Calculator
-    const subDone = detail.weeklyPlan.filter(t => isTaskDone(t, detail)).length
-    const subTotal = detail.weeklyPlan.length
-    const subProgress = subTotal > 0 ? Math.round((subDone / subTotal) * 100) : 0
     const currentTopic = getCurrentTopic(detail)
 
+    // Generate per-topic plans from theory blocks
+    const topicsWithBlocks = detail.topics.filter(t => (t.theoryBlocks || []).length > 0)
+    const planTopic = selectedPlanTopic
+      ? detail.topics.find(t => t.name === selectedPlanTopic)
+      : (topicsWithBlocks.length > 0 ? topicsWithBlocks[0] : null)
+    const topicPlan = planTopic ? generateTopicPlan(planTopic) : []
+    // Also include manually added tasks from the old weeklyPlan
+    const manualTasks = detail.weeklyPlan.filter(t => !t.blockId)
+
+    // Merge: topic plan (current week only, week 0) + manual tasks
+    const currentWeekPlan = topicPlan.filter(t => t.week === 0)
+    const allPlanTasks = [...currentWeekPlan, ...manualTasks]
+
+    const subTotal = allPlanTasks.length
+    const subDone = allPlanTasks.filter(t => {
+      if (t.autoComplete || t.done) return true
+      if (t.blockId && t.topic) {
+        const tp = detail.topics.find(tt => tt.name === t.topic)
+        if (tp) {
+          const block = (tp.theoryBlocks || []).find(b => b.id === t.blockId)
+          if (block && block.status === 'completed') return true
+        }
+      }
+      return false
+    }).length
+    const subProgress = subTotal > 0 ? Math.round((subDone / subTotal) * 100) : 0
+
     const tasksByDay = {}
-    detail.weeklyPlan.forEach((task, i) => {
-      let autoComplete = false
-      if (task.topic && task.blockId) {
-        const topic = detail.topics.find(t => t.name === task.topic)
-        if (topic) {
-          const block = (topic.theoryBlocks || []).find(b => b.id === task.blockId)
+    allPlanTasks.forEach((task, i) => {
+      let autoComplete = task.autoComplete || false
+      if (task.blockId && task.topic) {
+        const tp = detail.topics.find(tt => tt.name === task.topic)
+        if (tp) {
+          const block = (tp.theoryBlocks || []).find(b => b.id === task.blockId)
           autoComplete = block ? block.status === 'completed' : false
         }
       } else if (task.topic) {
@@ -1065,7 +1277,7 @@ function StudyPage() {
         </div>
 
         <div className="section-header">
-          <span className="section-title">Tareas de la semana</span>
+          <span className="section-title">Planning semanal</span>
           {isAdmin && (
             <button
               className="btn btn-sm border-none"
@@ -1076,6 +1288,34 @@ function StudyPage() {
             </button>
           )}
         </div>
+
+        {/* Topic selector tabs for per-topic plan */}
+        {topicsWithBlocks.length > 1 && (
+          <div className="px-16" style={{ paddingBottom: 8 }}>
+            <div className="flex gap-6 overflow-x-auto" style={{ paddingBottom: 4 }}>
+              {topicsWithBlocks.map(t => {
+                const isSelected = planTopic && planTopic.name === t.name
+                return (
+                  <button
+                    key={t.name}
+                    onClick={() => setSelectedPlanTopic(t.name)}
+                    className="btn btn-sm border-none flex-shrink-0"
+                    style={{
+                      background: isSelected ? `${detail.color}25` : 'var(--bg-input)',
+                      color: isSelected ? detail.color : 'var(--text-muted)',
+                      fontWeight: isSelected ? 700 : 500,
+                      fontSize: '0.72rem',
+                      padding: '5px 10px',
+                      borderRadius: 8,
+                    }}
+                  >
+                    {t.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Advance tracking badge */}
         {(() => {
@@ -1267,10 +1507,164 @@ function StudyPage() {
           })}
         </div>
 
-        {detail.weeklyPlan.length === 0 && (
+        {allPlanTasks.length === 0 && (
           <div className="text-muted text-center" style={{ padding: '30px 16px', fontSize: '0.85rem' }}>
-            Sin tareas. Anade tu planning semanal.
+            Sin tareas. Anade temas con contenido para generar el planning.
           </div>
+        )}
+
+        {/* Multi-week indicator */}
+        {topicPlan.length > 7 && (
+          <div className="px-16" style={{ paddingBottom: 8 }}>
+            <div className="text-xs text-muted text-center" style={{
+              padding: '6px 10px',
+              background: 'var(--bg-card)',
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+            }}>
+              {planTopic?.name}: {topicPlan.length} bloques en {Math.ceil(topicPlan.length / 7)} semanas (mostrando semana 1)
+            </div>
+          </div>
+        )}
+
+        {/* ========== ADMIN CORRECTIONS PANEL (Task 3) ========== */}
+        {isAdmin && (
+          <>
+            <div className="section-header">
+              <button
+                className="flex items-center gap-2 cursor-pointer bg-none border-none"
+                style={{ color: 'var(--text-muted)', padding: 0 }}
+                onClick={() => {
+                  setShowCorrections(!showCorrections)
+                  setSubmissions(loadSubmissions())
+                }}
+              >
+                <ClipboardList size={14} />
+                <span className="section-title">Correcciones</span>
+                <span className="badge badge-primary" style={{ fontSize: '0.6rem', padding: '1px 6px' }}>
+                  {submissions.filter(s => s.status === 'pending' && s.subjectName === detail.name).length}
+                </span>
+                {showCorrections ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+            </div>
+
+            {showCorrections && (
+              <div className="px-16" style={{ paddingBottom: 12 }}>
+                {submissions.filter(s => s.subjectName === detail.name).length === 0 && (
+                  <div className="text-muted text-center" style={{ padding: '20px 0', fontSize: '0.82rem' }}>
+                    Sin ejercicios enviados para corregir.
+                  </div>
+                )}
+                {submissions
+                  .filter(s => s.subjectName === detail.name)
+                  .sort((a, b) => {
+                    const order = { pending: 0, approved: 1, rejected: 1 }
+                    return (order[a.status] || 0) - (order[b.status] || 0)
+                  })
+                  .map((sub, idx) => (
+                    <div
+                      key={sub.exerciseId + '-' + idx}
+                      style={{
+                        padding: '12px',
+                        marginBottom: 8,
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--bg-card)',
+                        border: sub.status === 'pending'
+                          ? '1px solid var(--warning)'
+                          : sub.status === 'approved'
+                            ? '1px solid rgba(0,206,201,0.3)'
+                            : sub.status === 'rejected'
+                              ? '1px solid rgba(255,118,117,0.3)'
+                              : '1px solid var(--border)',
+                      }}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span className="text-xs text-muted font-600">{sub.topicName}</span>
+                          <span className="text-xs text-muted"> / {sub.blockTitle}</span>
+                        </div>
+                        <span className={`badge ${sub.status === 'pending' ? 'badge-warning' : sub.status === 'approved' ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.6rem', padding: '1px 6px' }}>
+                          {sub.status === 'pending' ? 'Pendiente' : sub.status === 'approved' ? 'Aprobado' : 'Rechazado'}
+                        </span>
+                      </div>
+                      <div className="text-0\.82 mb-2"><MathText text={sub.question} /></div>
+                      {sub.photoUrl && (
+                        <div style={{ marginBottom: 8 }}>
+                          <img
+                            src={sub.photoUrl}
+                            alt="Respuesta"
+                            style={{ maxWidth: '100%', maxHeight: 150, borderRadius: 8, border: '1px solid var(--border)' }}
+                          />
+                        </div>
+                      )}
+                      {sub.answer && !sub.photoUrl && (
+                        <div className="text-xs text-muted mb-2">Respuesta: {sub.answer}</div>
+                      )}
+                      <div className="text-xs text-muted mb-2">
+                        {new Date(sub.timestamp).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      {sub.feedback && (
+                        <div className="text-xs mb-2" style={{
+                          padding: '6px 8px',
+                          borderRadius: 6,
+                          background: sub.status === 'approved' ? 'rgba(0,206,201,0.08)' : 'rgba(255,118,117,0.08)',
+                          color: sub.status === 'approved' ? 'var(--success)' : 'var(--danger)',
+                        }}>
+                          <MessageSquare size={10} style={{ display: 'inline', marginRight: 4 }} />
+                          {sub.feedback}
+                        </div>
+                      )}
+                      {sub.status === 'pending' && (
+                        <div>
+                          <div className="flex gap-6 mb-2">
+                            <input
+                              value={feedbackText}
+                              onChange={e => setFeedbackText(e.target.value)}
+                              placeholder="Comentario (opcional)"
+                              style={{ fontSize: '0.78rem', padding: '6px 8px' }}
+                            />
+                          </div>
+                          <div className="flex gap-6">
+                            <button
+                              className="btn btn-sm flex-1"
+                              style={{ background: 'rgba(0,206,201,0.15)', color: 'var(--success)', border: 'none', justifyContent: 'center' }}
+                              onClick={() => {
+                                const updated = submissions.map(s =>
+                                  s.exerciseId === sub.exerciseId
+                                    ? { ...s, status: 'approved', feedback: feedbackText }
+                                    : s
+                                )
+                                setSubmissions(updated)
+                                saveSubmissions(updated)
+                                setFeedbackText('')
+                              }}
+                            >
+                              <ThumbsUp size={12} /> Aprobar
+                            </button>
+                            <button
+                              className="btn btn-sm flex-1"
+                              style={{ background: 'rgba(255,118,117,0.15)', color: 'var(--danger)', border: 'none', justifyContent: 'center' }}
+                              onClick={() => {
+                                const updated = submissions.map(s =>
+                                  s.exerciseId === sub.exerciseId
+                                    ? { ...s, status: 'rejected', feedback: feedbackText }
+                                    : s
+                                )
+                                setSubmissions(updated)
+                                saveSubmissions(updated)
+                                setFeedbackText('')
+                              }}
+                            >
+                              <ThumbsDown size={12} /> Rechazar
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </>
         )}
 
         <div style={{ height: 24 }} />
@@ -1471,8 +1865,19 @@ function StudyPage() {
         const current = getCurrentTopic(subject)
         const next = getNextTopic(subject)
         const doneTops = getCompletedTopics(subject)
-        const subDone = subject.weeklyPlan.filter(t => isTaskDone(t, subject)).length
-        const subTotal = subject.weeklyPlan.length
+        const subjectAllTasks = getSubjectAllTasks(subject)
+        const subTotal = subjectAllTasks.length
+        const subDone = subjectAllTasks.filter(t => {
+          if (t.autoComplete || t.done) return true
+          if (t.blockId && t.topic) {
+            const tp = subject.topics.find(tt => tt.name === t.topic)
+            if (tp) {
+              const block = (tp.theoryBlocks || []).find(b => b.id === t.blockId)
+              if (block && block.status === 'completed') return true
+            }
+          }
+          return isTaskDone(t, subject)
+        }).length
 
         return (
           <div

@@ -743,3 +743,54 @@ input:focus, textarea:focus, select:focus { border-color: var(--primary); }
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+/* ========== Corrections Panel ========== */
+.corrections-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.correction-card {
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+
+.correction-card.pending { border: 1px solid var(--warning); }
+.correction-card.approved { border: 1px solid rgba(0,206,201,0.3); }
+.correction-card.rejected { border: 1px solid rgba(255,118,117,0.3); }
+
+.correction-feedback {
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+}
+
+.correction-feedback.approved {
+  background: rgba(0,206,201,0.08);
+  color: var(--success);
+}
+
+.correction-feedback.rejected {
+  background: rgba(255,118,117,0.08);
+  color: var(--danger);
+}
+
+/* ========== Topic Plan Tabs ========== */
+.topic-plan-tabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.topic-plan-tabs::-webkit-scrollbar { display: none; }
