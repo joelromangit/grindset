@@ -112,22 +112,7 @@ export const mockSleep = {
     { id: 1, name: "Entre semana", days: [1, 2, 3, 4, 5], bedtime: "23:00", wakeup: "07:00" },
     { id: 2, name: "Fin de semana", days: [0, 6], bedtime: "00:00", wakeup: "09:00" }
   ],
-  records: [
-    { id: 1, date: "2026-03-28", bedtime: "23:15", wakeup: "07:05" },
-    { id: 2, date: "2026-03-27", bedtime: "00:30", wakeup: "07:45" },
-    { id: 3, date: "2026-03-26", bedtime: "23:00", wakeup: "06:50" },
-    { id: 4, date: "2026-03-25", bedtime: "01:00", wakeup: "08:00" },
-    { id: 5, date: "2026-03-24", bedtime: "23:30", wakeup: "07:30" },
-    { id: 6, date: "2026-03-23", bedtime: "22:45", wakeup: "06:45" },
-    { id: 7, date: "2026-03-22", bedtime: "23:10", wakeup: "07:20" },
-    { id: 8, date: "2026-03-21", bedtime: "23:45", wakeup: "07:10" },
-    { id: 9, date: "2026-03-20", bedtime: "02:00", wakeup: "09:30" },
-    { id: 10, date: "2026-03-19", bedtime: "23:05", wakeup: "07:00" },
-    { id: 11, date: "2026-03-18", bedtime: "23:20", wakeup: "07:15" },
-    { id: 12, date: "2026-03-17", bedtime: "00:15", wakeup: "07:30" },
-    { id: 13, date: "2026-03-16", bedtime: "01:30", wakeup: "10:00" },
-    { id: 14, date: "2026-03-15", bedtime: "00:45", wakeup: "09:15" }
-  ]
+  records: []
 };
 
 export const mockStudy = {

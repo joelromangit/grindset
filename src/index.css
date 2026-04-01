@@ -323,6 +323,39 @@ body {
   50% { box-shadow: 0 0 0 15px rgba(255,118,117,0); }
 }
 
+.sleep-info-section { margin-bottom: 16px; }
+.sleep-info-title { font-size: 0.9rem; font-weight: 800; margin-bottom: 6px; color: var(--text); }
+.sleep-info-text { font-size: 0.78rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 8px; }
+.sleep-info-text strong { color: var(--text); }
+.sleep-info-text em { color: var(--primary-light); font-style: normal; }
+
+.sleep-info-grid {
+  display: flex; gap: 8px; margin: 10px 0;
+}
+.sleep-info-chip {
+  flex: 1; text-align: center; padding: 8px 4px; border-radius: 8px;
+  font-size: 0.85rem; font-weight: 800; line-height: 1.3;
+}
+.sleep-info-chip span {
+  display: block; font-size: 0.6rem; font-weight: 600; opacity: 0.7; margin-top: 2px;
+}
+.sleep-info-chip.good { background: rgba(0,206,201,0.15); color: var(--success); }
+.sleep-info-chip.warn { background: rgba(253,203,110,0.15); color: var(--warning); }
+.sleep-info-chip.bad { background: rgba(255,118,117,0.15); color: var(--danger); }
+
+.sleep-info-rules { display: flex; flex-direction: column; gap: 12px; }
+.sleep-info-rule {
+  display: flex; gap: 12px; align-items: flex-start;
+  font-size: 0.78rem; color: var(--text-muted); line-height: 1.45;
+}
+.sleep-info-rule strong { color: var(--text); }
+.sleep-info-rule-icon {
+  flex-shrink: 0; width: 24px; height: 24px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 0.72rem;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+}
+
 .color-dot {
   width: 10px;
   height: 10px;
