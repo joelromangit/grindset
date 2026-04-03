@@ -10,6 +10,25 @@ import { sleepDb } from '../lib/db'
 const DAY_LABELS = ['L', 'M', 'X', 'J', 'V', 'S', 'D']
 const DAY_NAMES = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado', 'Domingo']
 
+function registerSW() {
+  if ('serviceWorker' in navigator) {
+    return navigator.serviceWorker.register('/sw.js')
+  }
+  return Promise.resolve(null)
+}
+
+function sendSWMessage(msg) {
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage(msg)
+  }
+}
+
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission()
+  }
+}
+
 function calcHours(bedtime, wakeup) {
   const [bh, bm] = bedtime.split(':').map(Number)
   const [wh, wm] = wakeup.split(':').map(Number)
@@ -111,9 +130,21 @@ function validateScheduleForm(form) {
 function SleepPage() {
   const [records, setRecords, { loading: loadingRecords, error: errorRecords }] = useDb(sleepDb.getRecords, mockSleep.records)
   const [schedules, setSchedules, { loading: loadingSchedules, error: errorSchedules }] = useDb(sleepDb.getSchedules, mockSleep.schedules)
-  const [sleeping, setSleeping] = useState(false)
-  const [startTime, setStartTime] = useState(null)
-  const [elapsed, setElapsed] = useState(0)
+  const [sleeping, setSleeping] = useState(() => {
+    const saved = localStorage.getItem('sleep_active')
+    return saved === 'true'
+  })
+  const [startTime, setStartTime] = useState(() => {
+    const saved = localStorage.getItem('sleep_start')
+    return saved ? Number(saved) : null
+  })
+  const [elapsed, setElapsed] = useState(() => {
+    const saved = localStorage.getItem('sleep_start')
+    if (saved && localStorage.getItem('sleep_active') === 'true') {
+      return Math.floor((Date.now() - Number(saved)) / 1000)
+    }
+    return 0
+  })
   const [modal, setModal] = useState(null)
   const [selectedDate, setSelectedDate] = useState(null)
   const [manualForm, setManualForm] = useState({ date: '', bedtime: '23:00', wakeup: '07:00' })
@@ -152,6 +183,53 @@ function SleepPage() {
     if (error) setShowError(true)
   }, [error])
 
+  // Register SW and listen for WAKE_UP from notification action
+  useEffect(() => {
+    registerSW()
+    requestNotificationPermission()
+
+    const handleSWMessage = (event) => {
+      if (event.data && event.data.type === 'WAKE_UP') {
+        wakeUpRef.current()
+      }
+    }
+    navigator.serviceWorker?.addEventListener('message', handleSWMessage)
+    return () => navigator.serviceWorker?.removeEventListener('message', handleSWMessage)
+  }, [])
+
+  // Re-schedule alarm on mount/reload if there's an active sleep session
+  useEffect(() => {
+    if (sleeping && startTime && !loadingSchedules) {
+      const sched = getScheduleForDate(todayStr, schedules)
+      const goalH = sched ? calcHours(sched.bedtime, sched.wakeup) : 8
+      const goalMs = goalH * 60 * 60 * 1000
+      sendSWMessage({ type: 'START_SLEEP_ALARM', goalMs, startTime })
+    }
+  }, [loadingSchedules])
+
+  // Keep a ref to the wake-up function so the SW message handler can call it
+  const wakeUpRef = useRef(null)
+  wakeUpRef.current = () => {
+    if (!sleeping || !startTime) return
+    setSleeping(false)
+    clearInterval(intervalRef.current)
+    const now = new Date()
+    const bedtime = new Date(startTime)
+    const record = {
+      id: Date.now(),
+      date: now.toISOString().split('T')[0],
+      bedtime: `${String(bedtime.getHours()).padStart(2, '0')}:${String(bedtime.getMinutes()).padStart(2, '0')}`,
+      wakeup: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+    }
+    setRecords(prev => [record, ...prev])
+    sleepDb.addRecord(record)
+    setElapsed(0)
+    setStartTime(null)
+    localStorage.removeItem('sleep_active')
+    localStorage.removeItem('sleep_start')
+    sendSWMessage({ type: 'CANCEL_SLEEP_ALARM' })
+  }
+
   const closeModal = () => {
     setModal(null)
     setScheduleForm(null)
@@ -168,9 +246,16 @@ function SleepPage() {
 
   const handleSleepToggle = () => {
     if (!sleeping) {
+      const now = Date.now()
       setSleeping(true)
-      setStartTime(Date.now())
+      setStartTime(now)
       setElapsed(0)
+      localStorage.setItem('sleep_active', 'true')
+      localStorage.setItem('sleep_start', String(now))
+      // Schedule notification alarm based on sleep goal
+      const goalH = getGoalHoursForDate(todayStr)
+      const goalMs = goalH * 60 * 60 * 1000
+      sendSWMessage({ type: 'START_SLEEP_ALARM', goalMs, startTime: now })
     } else {
       setSleeping(false)
       clearInterval(intervalRef.current)
@@ -186,6 +271,9 @@ function SleepPage() {
       sleepDb.addRecord(record)
       setElapsed(0)
       setStartTime(null)
+      localStorage.removeItem('sleep_active')
+      localStorage.removeItem('sleep_start')
+      sendSWMessage({ type: 'CANCEL_SLEEP_ALARM' })
     }
   }
 
@@ -194,6 +282,9 @@ function SleepPage() {
     clearInterval(intervalRef.current)
     setElapsed(0)
     setStartTime(null)
+    localStorage.removeItem('sleep_active')
+    localStorage.removeItem('sleep_start')
+    sendSWMessage({ type: 'CANCEL_SLEEP_ALARM' })
   }
 
   const handleManualAdd = () => {
@@ -292,7 +383,6 @@ function SleepPage() {
   const manualFormHasErrors = Object.keys(formErrors).length > 0
   const isManualFormInvalid = !manualForm.date?.trim() || !manualForm.bedtime?.trim() || !manualForm.wakeup?.trim()
   const isEditFormInvalid = !editForm?.date?.trim() || !editForm?.bedtime?.trim() || !editForm?.wakeup?.trim()
-  const isScheduleFormInvalid = !scheduleForm?.name?.trim() || !scheduleForm?.days?.length || !scheduleForm?.wakeup?.trim() || !scheduleForm?.cycles
 
   if (loading) {
     return (
@@ -1049,7 +1139,7 @@ function SleepPage() {
                   setScheduleForm({ ...scheduleForm, name: e.target.value })
                   setFormErrors(prev => { const { name, ...rest } = prev; return rest })
                 }}
-                placeholder="Ej: Entre semana" autoFocus />
+                placeholder="Ej: Entre semana" />
               {formErrors.name && <div className="error-text">{formErrors.name}</div>}
             </div>
             <div className="form-group">
@@ -1139,7 +1229,7 @@ function SleepPage() {
             )}
             <div className="flex gap-2">
               <button className="btn btn-outline btn-block" onClick={() => { setScheduleForm(null); setFormErrors({}) }}>Volver</button>
-              <button className="btn btn-primary btn-block" disabled={isScheduleFormInvalid} onClick={handleSaveSchedule}>Guardar</button>
+              <button className="btn btn-primary btn-block" onClick={handleSaveSchedule}>Guardar</button>
             </div>
           </div>
         </div>
