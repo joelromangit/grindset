@@ -345,7 +345,8 @@ function getWeekMonday(date) {
 }
 
 function SubmissionStatusBadge({ exerciseId, submissions = [] }) {
-  const sub = submissions.find(s => s.exerciseId === exerciseId)
+  const allSubs = submissions.filter(s => s.exerciseId === exerciseId)
+  const sub = allSubs.length > 0 ? allSubs[allSubs.length - 1] : null
   if (!sub) return null
   if (sub.status === 'approved') {
     return (
@@ -536,9 +537,13 @@ function AutoExerciseFillBlank({ exercise, onAnswer }) {
   )
 }
 
-function ManualExercise({ exercise, onPhotoUpload, submissions }) {
+function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, submissions }) {
   const fileRef = useRef(null)
+  const retryFileRef = useRef(null)
   const isDone = exercise.status === 'done' || exercise.status === 'submitted'
+  const allSubs = submissions.filter(s => s.exerciseId === exercise.id)
+  const latestSub = allSubs.length > 0 ? allSubs[allSubs.length - 1] : null
+  const isRejected = latestSub?.status === 'rejected'
 
   return (
     <div style={{ padding: '10px 0' }}>
@@ -555,11 +560,60 @@ function ManualExercise({ exercise, onPhotoUpload, submissions }) {
       {exercise.status === 'submitted' && (
         <div>
           <div className="flex items-center gap-2">
-            <Send size={14} style={{ color: 'var(--primary-light)' }} />
-            <span className="text-xs text-primary-light font-600">Enviado para correccion</span>
+            <Send size={14} style={{ color: isRejected ? 'var(--danger)' : 'var(--primary-light)' }} />
+            <span className={`text-xs font-600 ${isRejected ? 'text-danger' : 'text-primary-light'}`}>
+              {isRejected ? 'Rechazado' : 'Enviado para correccion'}
+            </span>
+            {allSubs.length > 1 && <span className="text-xs text-muted">(Intento {allSubs.length})</span>}
           </div>
           <SubmissionStatusBadge exerciseId={exercise.id} submissions={submissions} />
+          {isRejected && (
+            <div style={{ marginTop: 8 }}>
+              <input
+                ref={retryFileRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: 'none' }}
+                onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (file) onRetryUpload(exercise.id, file)
+                }}
+              />
+              <button
+                className="btn btn-sm"
+                style={{ background: 'rgba(108,92,231,0.15)', color: 'var(--primary-light)', border: 'none' }}
+                onClick={() => retryFileRef.current?.click()}
+              >
+                <Camera size={14} /> Subir nueva foto
+              </button>
+            </div>
+          )}
         </div>
+      )}
+      {/* Show previous attempts */}
+      {allSubs.length > 1 && (
+        <details style={{ marginTop: 6 }}>
+          <summary className="text-xs text-muted cursor-pointer" style={{ fontWeight: 600 }}>
+            Ver {allSubs.length - 1} intento{allSubs.length > 2 ? 's' : ''} anterior{allSubs.length > 2 ? 'es' : ''}
+          </summary>
+          <div style={{ marginTop: 6, paddingLeft: 8, borderLeft: '2px solid var(--border)' }}>
+            {allSubs.slice(0, -1).map((sub, i) => (
+              <div key={i} style={{ marginBottom: 8, fontSize: '0.75rem' }}>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted">Intento {sub.attempt || i + 1}</span>
+                  <span className={`badge ${sub.status === 'approved' ? 'badge-success' : sub.status === 'rejected' ? 'badge-danger' : 'badge-warning'}`} style={{ fontSize: '0.55rem', padding: '1px 4px' }}>
+                    {sub.status === 'approved' ? 'Aprobado' : sub.status === 'rejected' ? 'Rechazado' : 'Pendiente'}
+                  </span>
+                </div>
+                {sub.feedback && <div className="text-xs text-muted mt-1">{sub.feedback}</div>}
+                {sub.photoUrl && (
+                  <img src={sub.photoUrl} alt={`Intento ${i + 1}`} style={{ maxWidth: '100%', maxHeight: 100, borderRadius: 6, marginTop: 4, opacity: 0.7 }} />
+                )}
+              </div>
+            ))}
+          </div>
+        </details>
       )}
       {!exercise.photoUrl && exercise.status !== 'submitted' && (
         <>
@@ -589,7 +643,7 @@ function ManualExercise({ exercise, onPhotoUpload, submissions }) {
   )
 }
 
-function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPhotoUpload, onSubmitForReview, onForceUnlock, onForceComplete, onReopen, expandedBlockId, submissions }) {
+function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPhotoUpload, onRetryUpload, onSubmitForReview, onForceUnlock, onForceComplete, onReopen, expandedBlockId, submissions }) {
   const blockStatus = block.status || 'available'
   const isLocked = blockStatus === 'locked' && !isAdmin
   const isCompleted = blockStatus === 'completed'
@@ -715,7 +769,7 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
                     <AutoExerciseFillBlank exercise={ex} onAnswer={onExerciseAnswer} />
                   )}
                   {ex.type === 'manual' && (
-                    <ManualExercise exercise={ex} onPhotoUpload={onPhotoUpload} submissions={submissions} />
+                    <ManualExercise exercise={ex} onPhotoUpload={onPhotoUpload} onRetryUpload={onRetryUpload} submissions={submissions} />
                   )}
                 </div>
               ))}
@@ -1423,6 +1477,38 @@ function StudyPage() {
     }
   }
 
+  const handleRetryUpload = async (exerciseId, file) => {
+    let photoUrl = null
+    if (isSupabaseConfigured() && supabase) {
+      const ext = file.name.split('.').pop()
+      const path = `exercises/${Date.now()}.${ext}`
+      const { error: uploadError } = await supabase.storage.from('uploads').upload(path, file)
+      if (!uploadError) {
+        const { data } = supabase.storage.from('uploads').getPublicUrl(path)
+        photoUrl = data.publicUrl
+      }
+    }
+    if (!photoUrl) {
+      photoUrl = URL.createObjectURL(file)
+    }
+    // Set exercise back to 'done' with new photo so it can be re-submitted
+    setSubjects(subjects.map(s => {
+      if (s.id !== activeSubject) return s
+      return {
+        ...s,
+        topics: s.topics.map(t => ({
+          ...t,
+          theoryBlocks: (t.theoryBlocks || []).map(b => ({
+            ...b,
+            exercises: (b.exercises || []).map(ex =>
+              ex.id === exerciseId ? { ...ex, status: 'done', photoUrl } : ex
+            )
+          }))
+        }))
+      }
+    }))
+  }
+
   const handleSubmitForReview = (blockId) => {
     const subject = subjects.find(s => s.id === activeSubject)
     let topicName = ''
@@ -1457,10 +1543,13 @@ function StudyPage() {
       }
     }
 
-    // Store submissions in Supabase
+    // Store submissions - allow resubmission for rejected exercises
     const newSubmissions = exercisesToSubmit.filter(
-      sub => !submissions.some(e => e.exerciseId === sub.exerciseId)
-    )
+      sub => !submissions.some(e => e.exerciseId === sub.exerciseId && e.status === 'pending')
+    ).map(sub => {
+      const prevAttempts = submissions.filter(e => e.exerciseId === sub.exerciseId)
+      return { ...sub, attempt: prevAttempts.length + 1 }
+    })
     const updatedSubmissions = [...submissions, ...newSubmissions]
     setSubmissions(updatedSubmissions)
     appStateDb.set('study_submissions', updatedSubmissions)
@@ -1626,6 +1715,7 @@ function StudyPage() {
                 isAdmin={isAdmin}
                 onExerciseAnswer={handleExerciseAnswer}
                 onPhotoUpload={handlePhotoUpload}
+                onRetryUpload={handleRetryUpload}
                 onSubmitForReview={handleSubmitForReview}
                 onForceUnlock={handleForceUnlock}
                 onForceComplete={(blockId) => setConfirmAction({
