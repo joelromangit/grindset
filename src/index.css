@@ -69,6 +69,7 @@ body {
   background: var(--bg);
   z-index: 10;
 }
+.admin-active .page-header { top: 32px; }
 
 .page-header h1 {
   font-size: 1.5rem;
@@ -599,6 +600,7 @@ input:focus, textarea:focus, select:focus {
 .bg-input { background: var(--bg-input); }
 .transition-all { transition: all 0.2s; }
 .sticky-top { position: sticky; top: 0; z-index: 10; }
+.admin-active .sticky-top { top: 32px; }
 
 /* Grid */
 .grid-7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }

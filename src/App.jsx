@@ -12,7 +12,7 @@ function AppContent() {
   const { isAdmin } = useAdmin()
   return (
     <>
-      <div className="app-container" style={isAdmin ? { paddingTop: 32 } : undefined}>
+      <div className={`app-container${isAdmin ? ' admin-active' : ''}`} style={isAdmin ? { paddingTop: 32 } : undefined}>
         <Routes>
           <Route path="/" element={<StudyPage />} />
           <Route path="/sleep" element={<SleepPage />} />
