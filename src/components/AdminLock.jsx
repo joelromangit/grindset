@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Lock, Unlock } from 'lucide-react'
+import { Lock, ShieldCheck, LogOut } from 'lucide-react'
 import { useAdmin } from '../contexts/AdminContext'
 
 export default function AdminLock() {
@@ -29,36 +29,76 @@ export default function AdminLock() {
 
   return (
     <>
-      <button
-        onClick={handleClick}
-        style={{
+      {isAdmin && (
+        <div style={{
           position: 'fixed',
-          bottom: 80,
-          right: 16,
-          zIndex: 1000,
-          width: 40,
-          height: 40,
-          borderRadius: '50%',
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border)',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 999,
+          background: 'linear-gradient(135deg, rgba(108,92,231,0.95) 0%, rgba(72,52,212,0.95) 100%)',
+          backdropFilter: 'blur(8px)',
+          padding: '6px 16px',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
-          padding: 0,
-        }}
-      >
-        {isAdmin ? (
-          <Unlock size={18} color="var(--primary)" />
-        ) : (
-          <Lock size={18} color="var(--text-muted)" />
-        )}
-      </button>
+          justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ShieldCheck size={16} color="white" />
+            <span style={{ color: 'white', fontSize: '0.75rem', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+              Modo Profesor
+            </span>
+          </div>
+          <button
+            onClick={handleClick}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              borderRadius: 6,
+              padding: '3px 10px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              color: 'white',
+              fontSize: '0.68rem',
+              fontWeight: 600,
+            }}
+          >
+            <LogOut size={12} /> Salir
+          </button>
+        </div>
+      )}
+
+      {!isAdmin && (
+        <button
+          onClick={handleClick}
+          style={{
+            position: 'fixed',
+            bottom: 80,
+            right: 16,
+            zIndex: 1000,
+            width: 36,
+            height: 36,
+            borderRadius: '50%',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            padding: 0,
+            opacity: 0.4,
+          }}
+        >
+          <Lock size={14} color="var(--text-muted)" />
+        </button>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>Modo Admin</h2>
+            <h2>Modo Profesor</h2>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
                 <input
