@@ -72,6 +72,21 @@ const TOPIC_STATE_CONFIG = {
   completed: { icon: CheckCircle, label: 'Completado', color: 'var(--success)' },
 }
 
+// Check if an exercise is truly complete:
+// - auto exercises: done/submitted/corrected = complete
+// - manual exercises: only complete if latest submission is approved
+function isExerciseComplete(ex, submissions) {
+  if (ex.status === 'corrected') return true
+  if (ex.status === 'done') return true
+  if (ex.status === 'submitted') {
+    if (ex.type === 'auto') return true
+    const exSubs = submissions.filter(s => s.exerciseId === ex.id)
+    const latest = exSubs.length > 0 ? exSubs[exSubs.length - 1] : null
+    return latest?.status === 'approved'
+  }
+  return false
+}
+
 function getTopicStateFromLegacy(status) {
   if (status === 'current') return 'in_progress'
   if (status === 'done') return 'completed'
@@ -80,13 +95,13 @@ function getTopicStateFromLegacy(status) {
   return 'locked'
 }
 
-function isTopicExercisesComplete(subject, topicName) {
+function isTopicExercisesComplete(subject, topicName, subs = []) {
   if (!topicName || !subject) return false
   const topic = subject.topics.find(t => t.name === topicName)
   if (!topic) return false
   const allExercises = (topic.theoryBlocks || []).flatMap(b => b.exercises || [])
   if (allExercises.length === 0) return false
-  return allExercises.every(ex => ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected')
+  return allExercises.every(ex => isExerciseComplete(ex, subs))
 }
 
 function TopicStateBadge({ topic, subjectColor, isAdmin, onClick }) {
@@ -746,6 +761,7 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
   const allExercises = block.exercises || []
   const allDone = allExercises.length > 0 && allExercises.every(ex => ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected')
   const allSubmitted = allExercises.length > 0 && allExercises.every(ex => ex.status === 'submitted' || ex.status === 'corrected')
+  const allTrulyComplete = allExercises.length > 0 && allExercises.every(ex => isExerciseComplete(ex, submissions))
   const [showSuccess, setShowSuccess] = useState(false)
 
   const handleSubmit = () => {
@@ -778,14 +794,21 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
           <div className="text-xs text-muted mt-1">
             {isLocked ? (
               <span style={{ color: 'var(--text-muted)' }}>Bloqueado</span>
-            ) : isCompleted ? (
+            ) : isCompleted && allTrulyComplete ? (
               <span style={{ color: 'var(--success)' }}>Completado</span>
             ) : (() => {
               const pendingEx = allExercises.filter(ex => ex.status === 'pending')
-              const submittedEx = allExercises.filter(ex => ex.status === 'submitted')
+              const manualPendingReview = allExercises.filter(ex => ex.type === 'manual' && ex.status === 'submitted' && (() => {
+                const subs = submissions.filter(s => s.exerciseId === ex.id)
+                const latest = subs.length > 0 ? subs[subs.length - 1] : null
+                return !latest || latest.status === 'pending'
+              })())
               const doneEx = allExercises.filter(ex => ex.status === 'done')
-              if (pendingEx.length === 0 && doneEx.length === 0 && submittedEx.length > 0) {
-                return <span style={{ color: 'var(--primary-light)' }}>Pendiente de corregir ({submittedEx.length})</span>
+              if (pendingEx.length === 0 && doneEx.length === 0 && manualPendingReview.length > 0) {
+                return <span style={{ color: 'var(--primary-light)' }}>Pendiente de corregir ({manualPendingReview.length})</span>
+              }
+              if (allTrulyComplete) {
+                return <span style={{ color: 'var(--success)' }}>Completado</span>
               }
               if (doneEx.length > 0 && pendingEx.length === 0) {
                 return <span style={{ color: '#f59e0b' }}>{doneEx.length} por reenviar</span>
@@ -860,9 +883,10 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
                 <div key={ex.id} style={{ borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
                   <div className="flex items-center gap-2" style={{ paddingTop: i > 0 ? 8 : 0 }}>
                     <span className="text-xs text-muted font-600">{i + 1}.</span>
-                    {ex.status === 'submitted' && latestSub?.status === 'approved' && <span className="badge badge-success" style={{ fontSize: '0.6rem', padding: '1px 6px' }}>Corregido</span>}
-                    {ex.status === 'submitted' && latestSub?.status === 'rejected' && <span className="badge" style={{ fontSize: '0.6rem', padding: '1px 6px', background: 'rgba(255,118,117,0.15)', color: 'var(--danger)' }}>Rechazado</span>}
-                    {ex.status === 'submitted' && (!latestSub || latestSub.status === 'pending') && <span className="badge" style={{ fontSize: '0.6rem', padding: '1px 6px', background: 'rgba(108,92,231,0.12)', color: 'var(--primary-light)' }}>Por corregir</span>}
+                    {ex.status === 'submitted' && ex.type === 'auto' && <span className="badge badge-success" style={{ fontSize: '0.6rem', padding: '1px 6px' }}>Hecho</span>}
+                    {ex.status === 'submitted' && ex.type === 'manual' && latestSub?.status === 'approved' && <span className="badge badge-success" style={{ fontSize: '0.6rem', padding: '1px 6px' }}>Corregido</span>}
+                    {ex.status === 'submitted' && ex.type === 'manual' && latestSub?.status === 'rejected' && <span className="badge" style={{ fontSize: '0.6rem', padding: '1px 6px', background: 'rgba(255,118,117,0.15)', color: 'var(--danger)' }}>Rechazado</span>}
+                    {ex.status === 'submitted' && ex.type === 'manual' && (!latestSub || latestSub.status === 'pending') && <span className="badge" style={{ fontSize: '0.6rem', padding: '1px 6px', background: 'rgba(108,92,231,0.12)', color: 'var(--primary-light)' }}>Por corregir</span>}
                     {ex.status === 'done' && <span className="badge badge-success" style={{ fontSize: '0.6rem', padding: '1px 6px' }}>Hecho</span>}
                     {ex.status === 'pending' && <span className="badge" style={{ fontSize: '0.6rem', padding: '1px 6px', background: 'rgba(136,136,160,0.12)', color: 'var(--text-muted)' }}>Pendiente</span>}
                   </div>
@@ -996,7 +1020,8 @@ function StudyPage() {
     })
   }, [subjects, setPlan])
 
-  const checkAndUnlockBlocks = useCallback((subjectId) => {
+  const checkAndUnlockBlocks = useCallback((subjectId, subs) => {
+    const currentSubs = subs || submissions
     setSubjects(prev => prev.map(s => {
       if (s.id !== subjectId) return s
       let topicsChanged = false
@@ -1010,7 +1035,7 @@ function StudyPage() {
           if (block.status === 'completed' || block.status === 'locked') return block
           const exercises = block.exercises || []
           if (exercises.length === 0) return block
-          const allComplete = exercises.every(ex => ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected')
+          const allComplete = exercises.every(ex => isExerciseComplete(ex, currentSubs))
           if (!allComplete) return block
           blocksChanged = true
           return { ...block, status: 'completed' }
@@ -1043,7 +1068,7 @@ function StudyPage() {
       }
       return { ...s, topics: updatedTopics }
     }))
-  }, [setSubjects])
+  }, [setSubjects, submissions])
 
   const [activeSubject, setActiveSubject] = useState(null)
   const [activeTopic, setActiveTopic] = useState(null)
@@ -1110,7 +1135,7 @@ function StudyPage() {
   }
 
   const isTaskDone = (task, subject) => {
-    if (task.topic && isTopicExercisesComplete(subject, task.topic)) return true
+    if (task.topic && isTopicExercisesComplete(subject, task.topic, submissions)) return true
     return !!task.done
   }
 
@@ -1414,9 +1439,7 @@ function StudyPage() {
           if (t.name !== topicName || t.order !== topicOrder) return t
           const blocks = (t.theoryBlocks || []).map(b => {
             if (b.status !== 'completed') return b
-            const allDone = (b.exercises || []).every(ex =>
-              ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected'
-            )
+            const allDone = (b.exercises || []).every(ex => isExerciseComplete(ex, submissions))
             if (allDone) return b
             // Reset incomplete block and its exercises
             return {
@@ -1451,9 +1474,7 @@ function StudyPage() {
         const blocks = (t.theoryBlocks || []).map((b, i, arr) => {
           const exercises = b.exercises || []
           if (exercises.length === 0) return b
-          const allComplete = exercises.every(ex =>
-            ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected'
-          )
+          const allComplete = exercises.every(ex => isExerciseComplete(ex, submissions))
           if (allComplete && b.status !== 'completed') {
             return { ...b, status: 'completed' }
           }
@@ -1471,9 +1492,7 @@ function StudyPage() {
         // Determine correct topic status
         const allBlocksCompleted = blocks.length > 0 && blocks.every(b => b.status === 'completed')
         const allExercises = blocks.flatMap(b => b.exercises || [])
-        const allExDone = allExercises.length > 0 && allExercises.every(ex =>
-          ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected'
-        )
+        const allExDone = allExercises.length > 0 && allExercises.every(ex => isExerciseComplete(ex, submissions))
         let newStatus = t.status
         if (allBlocksCompleted && allExDone) {
           newStatus = 'completed'
@@ -1506,9 +1525,7 @@ function StudyPage() {
         const blocks = (t.theoryBlocks || []).map(b => {
           const exercises = b.exercises || []
           if (exercises.length === 0) return b
-          const allComplete = exercises.every(ex =>
-            ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected'
-          )
+          const allComplete = exercises.every(ex => isExerciseComplete(ex, submissions))
           if (allComplete && b.status !== 'completed') return { ...b, status: 'completed' }
           if (!allComplete && b.status === 'completed') return { ...b, status: 'available' }
           return b
@@ -1520,9 +1537,7 @@ function StudyPage() {
         }
         const allBlocksCompleted = blocks.length > 0 && blocks.every(b => b.status === 'completed')
         const allExercises = blocks.flatMap(b => b.exercises || [])
-        const allExDone = allExercises.length > 0 && allExercises.every(ex =>
-          ex.status === 'done' || ex.status === 'submitted' || ex.status === 'corrected'
-        )
+        const allExDone = allExercises.length > 0 && allExercises.every(ex => isExerciseComplete(ex, submissions))
         let newStatus = t.status
         if (allBlocksCompleted && allExDone) {
           newStatus = 'completed'
@@ -2499,10 +2514,15 @@ function StudyPage() {
                 {(() => {
                   const allEx = (topic.theoryBlocks || []).flatMap(b => b.exercises || [])
                   const pendingEx = allEx.filter(ex => ex.status === 'pending')
-                  const submittedEx = allEx.filter(ex => ex.status === 'submitted')
                   const doneEx = allEx.filter(ex => ex.status === 'done')
+                  const manualPendingReview = allEx.filter(ex => ex.type === 'manual' && ex.status === 'submitted' && (() => {
+                    const subs = submissions.filter(s => s.exerciseId === ex.id)
+                    const latest = subs.length > 0 ? subs[subs.length - 1] : null
+                    return !latest || latest.status === 'pending'
+                  })())
+                  const allTrueComplete = allEx.length > 0 && allEx.every(ex => isExerciseComplete(ex, submissions))
                   const isPartial = state === 'in_progress' && allEx.length > 0 && pendingEx.length > 0 && pendingEx.length < allEx.length
-                  const onlyCorrectionLeft = state === 'in_progress' && pendingEx.length === 0 && doneEx.length === 0 && submittedEx.length > 0
+                  const onlyCorrectionLeft = state === 'in_progress' && pendingEx.length === 0 && doneEx.length === 0 && manualPendingReview.length > 0
 
                   if (onlyCorrectionLeft) {
                     return (
@@ -2528,12 +2548,25 @@ function StudyPage() {
                     )
                   }
 
+                  // Topic marked completed but has uncorrected manual exercises
+                  if (state === 'completed' && !allTrueComplete && manualPendingReview.length > 0) {
+                    return (
+                      <span style={{
+                        fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase',
+                        padding: '3px 8px', borderRadius: 10,
+                        background: 'rgba(108,92,231,0.12)', color: 'var(--primary-light)',
+                      }}>
+                        Por corregir
+                      </span>
+                    )
+                  }
+
                   return (
                     <span style={{
                       fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase',
                       padding: '3px 8px', borderRadius: 10,
                       background: state === 'in_progress' ? `${detail.color}20`
-                        : state === 'completed' ? 'rgba(0,206,201,0.15)'
+                        : state === 'completed' && allTrueComplete ? 'rgba(0,206,201,0.15)'
                         : state === 'available' ? 'rgba(108,92,231,0.12)'
                         : 'rgba(136,136,160,0.12)',
                       color: state === 'in_progress' ? detail.color : config.color,
