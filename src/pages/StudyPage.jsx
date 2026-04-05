@@ -537,14 +537,19 @@ function AutoExerciseFillBlank({ exercise, onAnswer }) {
   )
 }
 
-function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto, submissions }) {
+function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto, onCorrect, isAdmin, submissions }) {
   const fileRef = useRef(null)
   const retryFileRef = useRef(null)
+  const correctionFileRef = useRef(null)
+  const [feedback, setFeedback] = useState('')
+  const [corrFile, setCorrFile] = useState(null)
+  const [corrPreview, setCorrPreview] = useState(null)
   const isDone = exercise.status === 'done' || exercise.status === 'submitted'
   const allSubs = submissions.filter(s => s.exerciseId === exercise.id)
   const latestSub = allSubs.length > 0 ? allSubs[allSubs.length - 1] : null
   const isRejected = latestSub?.status === 'rejected'
   const isPendingReview = latestSub?.status === 'pending'
+  const isApproved = latestSub?.status === 'approved'
 
   return (
     <div style={{ padding: '10px 0' }}>
@@ -561,14 +566,31 @@ function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto,
       {exercise.status === 'submitted' && (
         <div>
           <div className="flex items-center gap-2">
-            <Send size={14} style={{ color: isRejected ? 'var(--danger)' : 'var(--primary-light)' }} />
-            <span className={`text-xs font-600 ${isRejected ? 'text-danger' : 'text-primary-light'}`}>
-              {isRejected ? 'Rechazado' : 'Enviado para correccion'}
+            <Send size={14} style={{ color: isRejected ? 'var(--danger)' : isApproved ? 'var(--success)' : 'var(--primary-light)' }} />
+            <span className={`text-xs font-600 ${isRejected ? 'text-danger' : isApproved ? 'text-success' : 'text-primary-light'}`}>
+              {isRejected ? 'Rechazado' : isApproved ? 'Corregido' : 'Enviado para correccion'}
             </span>
             {allSubs.length > 1 && <span className="text-xs text-muted">(Intento {allSubs.length})</span>}
           </div>
-          <SubmissionStatusBadge exerciseId={exercise.id} submissions={submissions} />
-          {(isRejected || isPendingReview) && (
+          {latestSub?.feedback && (
+            <div className="text-xs mt-1" style={{
+              padding: '6px 8px',
+              borderRadius: 6,
+              background: isApproved ? 'rgba(0,206,201,0.08)' : 'rgba(255,118,117,0.08)',
+              color: isApproved ? 'var(--success)' : 'var(--danger)',
+            }}>
+              <MessageSquare size={10} style={{ display: 'inline', marginRight: 4 }} />
+              {latestSub.feedback}
+            </div>
+          )}
+          {latestSub?.correctionUrl && (
+            <div style={{ marginTop: 6 }}>
+              <div className="text-xs text-muted mb-1" style={{ fontWeight: 600 }}>Correccion:</div>
+              <img src={latestSub.correctionUrl} alt="Correccion" style={{ maxWidth: '100%', maxHeight: 150, borderRadius: 8, border: '1px solid var(--danger)' }} />
+            </div>
+          )}
+          {/* Student actions: change/delete photo when pending or rejected */}
+          {!isAdmin && (isRejected || isPendingReview) && (
             <div style={{ marginTop: 8 }} className="flex gap-6">
               <input
                 ref={retryFileRef}
@@ -595,6 +617,71 @@ function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto,
               >
                 <Trash2 size={14} /> Borrar
               </button>
+            </div>
+          )}
+          {/* Admin correction UI */}
+          {isAdmin && isPendingReview && (
+            <div style={{ marginTop: 10, padding: 10, borderRadius: 8, border: '1px solid var(--primary-light)', background: 'rgba(108,92,231,0.05)' }}>
+              <div className="text-xs font-700 mb-2" style={{ color: 'var(--primary-light)' }}>Corregir ejercicio</div>
+              <input
+                value={feedback}
+                onChange={e => setFeedback(e.target.value)}
+                placeholder="Comentario (opcional)"
+                style={{ fontSize: '0.78rem', padding: '6px 8px', marginBottom: 6, width: '100%' }}
+              />
+              <div className="flex gap-6 mb-2">
+                <input
+                  ref={correctionFileRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (file) {
+                      setCorrFile(file)
+                      setCorrPreview(URL.createObjectURL(file))
+                    }
+                  }}
+                />
+                <button
+                  className="btn btn-sm btn-outline flex-1"
+                  style={{ justifyContent: 'center', fontSize: '0.72rem' }}
+                  onClick={() => correctionFileRef.current?.click()}
+                >
+                  <Upload size={12} /> {corrFile ? 'Foto subida' : 'Subir correccion'}
+                </button>
+              </div>
+              {corrPreview && (
+                <div style={{ marginBottom: 8 }}>
+                  <img src={corrPreview} alt="Preview" style={{ maxWidth: '100%', maxHeight: 120, borderRadius: 8, border: '1px solid var(--border)' }} />
+                </div>
+              )}
+              <div className="flex gap-6">
+                <button
+                  className="btn btn-sm flex-1"
+                  style={{ background: 'rgba(0,206,201,0.15)', color: 'var(--success)', border: 'none', justifyContent: 'center' }}
+                  onClick={() => {
+                    onCorrect(exercise.id, latestSub.timestamp, 'approved', feedback, null)
+                    setFeedback('')
+                    setCorrFile(null)
+                    setCorrPreview(null)
+                  }}
+                >
+                  <ThumbsUp size={12} /> Aprobar
+                </button>
+                <button
+                  className="btn btn-sm flex-1"
+                  style={{ background: 'rgba(255,118,117,0.15)', color: 'var(--danger)', border: 'none', justifyContent: 'center' }}
+                  onClick={() => {
+                    onCorrect(exercise.id, latestSub.timestamp, 'rejected', feedback, corrFile)
+                    setFeedback('')
+                    setCorrFile(null)
+                    setCorrPreview(null)
+                  }}
+                >
+                  <ThumbsDown size={12} /> Rechazar
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -651,7 +738,7 @@ function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto,
   )
 }
 
-function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPhotoUpload, onRetryUpload, onDeletePhoto, onSubmitForReview, onForceUnlock, onForceComplete, onReopen, expandedBlockId, submissions }) {
+function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPhotoUpload, onRetryUpload, onDeletePhoto, onCorrect, onSubmitForReview, onForceUnlock, onForceComplete, onReopen, expandedBlockId, submissions }) {
   const blockStatus = block.status || 'available'
   const isLocked = blockStatus === 'locked' && !isAdmin
   const isCompleted = blockStatus === 'completed'
@@ -786,7 +873,7 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
                     <AutoExerciseFillBlank exercise={ex} onAnswer={onExerciseAnswer} />
                   )}
                   {ex.type === 'manual' && (
-                    <ManualExercise exercise={ex} onPhotoUpload={onPhotoUpload} onRetryUpload={onRetryUpload} onDeletePhoto={onDeletePhoto} submissions={submissions} />
+                    <ManualExercise exercise={ex} onPhotoUpload={onPhotoUpload} onRetryUpload={onRetryUpload} onDeletePhoto={onDeletePhoto} onCorrect={onCorrect} isAdmin={isAdmin} submissions={submissions} />
                   )}
                 </div>
               )})}
@@ -1620,6 +1707,26 @@ function StudyPage() {
     appStateDb.set('study_submissions', updatedSubs)
   }
 
+  const handleCorrectExercise = async (exerciseId, timestamp, status, feedback, correctionFile) => {
+    let correctionUrl = null
+    if (correctionFile && isSupabaseConfigured() && supabase) {
+      const ext = correctionFile.name.split('.').pop()
+      const path = `corrections/${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('uploads').upload(path, correctionFile)
+      if (!upErr) {
+        const { data } = supabase.storage.from('uploads').getPublicUrl(path)
+        correctionUrl = data.publicUrl
+      }
+    }
+    const updated = submissions.map(s =>
+      s.exerciseId === exerciseId && s.timestamp === timestamp
+        ? { ...s, status, feedback: feedback || '', correctionUrl: correctionUrl || s.correctionUrl || null }
+        : s
+    )
+    setSubmissions(updated)
+    appStateDb.set('study_submissions', updated)
+  }
+
   const handleRetryUpload = async (exerciseId, file) => {
     let photoUrl = null
     if (isSupabaseConfigured() && supabase) {
@@ -1861,6 +1968,7 @@ function StudyPage() {
                 onPhotoUpload={handlePhotoUpload}
                 onRetryUpload={handleRetryUpload}
                 onDeletePhoto={handleDeletePhoto}
+                onCorrect={handleCorrectExercise}
                 onSubmitForReview={handleSubmitForReview}
                 onForceUnlock={handleForceUnlock}
                 onForceComplete={(blockId) => setConfirmAction({
