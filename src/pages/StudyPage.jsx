@@ -6,7 +6,7 @@ import {
   Lock, Unlock, CheckCircle, ChevronDown, ChevronUp,
   Camera, Send, ArrowLeft, Image, Upload, Zap,
   Clock, MessageSquare, ThumbsUp, ThumbsDown, ClipboardList, RefreshCw,
-  ArrowUp
+  ArrowUp, AlertCircle
 } from 'lucide-react'
 import katex from 'katex'
 import { mockStudy } from '../data/mockData'
@@ -569,28 +569,37 @@ function AutoExerciseMultipleChoice({ exercise, onAnswer }) {
   const [submitted, setSubmitted] = useState(false)
   const { choices, correctIndex } = exercise.autoConfig
   const isDone = exercise.status === 'done' || exercise.status === 'submitted'
+  const wasWrong = exercise.wrongAnswer !== undefined
 
   const handleSubmit = () => {
     if (selected === null) return
     setSubmitted(true)
-    if (selected === correctIndex) {
-      onAnswer(exercise.id, selected, true)
-    }
+    onAnswer(exercise.id, selected, selected === correctIndex)
   }
 
-  const handleRetry = () => {
-    setSelected(null)
-    setSubmitted(false)
-  }
-
-  if (isDone) {
+  if (isDone || wasWrong) {
+    const correct = wasWrong ? false : true
+    const answeredIdx = wasWrong ? exercise.wrongAnswer : correctIndex
     return (
       <div style={{ padding: '10px 0' }}>
         <div className="text-0\.85 mb-2"><MathText text={exercise.question} /></div>
-        <div className="flex items-center gap-2">
-          <CheckCircle size={16} style={{ color: 'var(--success)' }} />
-          <span className="text-xs text-success font-600">Correcto: <MathText text={choices[correctIndex]} /></span>
-        </div>
+        {correct ? (
+          <div className="flex items-center gap-2">
+            <CheckCircle size={16} style={{ color: 'var(--success)' }} />
+            <span className="text-xs text-success font-600">Correcto: <MathText text={choices[correctIndex]} /></span>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center gap-2">
+              <X size={16} style={{ color: 'var(--danger)' }} />
+              <span className="text-xs text-danger font-600">Incorrecto: <MathText text={choices[answeredIdx]} /></span>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <CheckCircle size={14} style={{ color: 'var(--success)' }} />
+              <span className="text-xs text-success font-600">Correcta: <MathText text={choices[correctIndex]} /></span>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -646,11 +655,6 @@ function AutoExerciseMultipleChoice({ exercise, onAnswer }) {
           Comprobar
         </button>
       )}
-      {submitted && selected !== correctIndex && (
-        <button className="btn btn-outline btn-sm mt-2" onClick={handleRetry}>
-          Reintentar
-        </button>
-      )}
     </div>
   )
 }
@@ -660,30 +664,37 @@ function AutoExerciseFillBlank({ exercise, onAnswer }) {
   const [submitted, setSubmitted] = useState(false)
   const isDone = exercise.status === 'done' || exercise.status === 'submitted'
   const expected = exercise.autoConfig.expectedAnswer
+  const wasWrong = exercise.wrongAnswer !== undefined
 
   const isCorrect = submitted && answersMatch(answer, expected)
 
   const handleSubmit = () => {
     if (!answer.trim()) return
     setSubmitted(true)
-    if (answersMatch(answer, expected)) {
-      onAnswer(exercise.id, answer.trim(), true)
-    }
+    onAnswer(exercise.id, answer.trim(), answersMatch(answer.trim(), expected))
   }
 
-  const handleRetry = () => {
-    setAnswer('')
-    setSubmitted(false)
-  }
-
-  if (isDone) {
+  if (isDone || wasWrong) {
     return (
       <div style={{ padding: '10px 0' }}>
         <div className="text-0\.85 mb-2"><MathText text={exercise.question} /></div>
-        <div className="flex items-center gap-2">
-          <CheckCircle size={16} style={{ color: 'var(--success)' }} />
-          <span className="text-xs text-success font-600">Correcto: {expected}</span>
-        </div>
+        {wasWrong ? (
+          <div>
+            <div className="flex items-center gap-2">
+              <X size={16} style={{ color: 'var(--danger)' }} />
+              <span className="text-xs text-danger font-600">Tu respuesta: {exercise.wrongAnswer}</span>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <CheckCircle size={14} style={{ color: 'var(--success)' }} />
+              <span className="text-xs text-success font-600">Correcta: {expected}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <CheckCircle size={16} style={{ color: 'var(--success)' }} />
+            <span className="text-xs text-success font-600">Correcto: {expected}</span>
+          </div>
+        )}
       </div>
     )
   }
@@ -708,7 +719,6 @@ function AutoExerciseFillBlank({ exercise, onAnswer }) {
       {submitted && !isCorrect && (
         <div className="mt-2">
           <span className="text-xs text-danger font-600">Respuesta correcta: {expected}</span>
-          <button className="btn btn-outline btn-sm mt-1" onClick={handleRetry}>Reintentar</button>
         </div>
       )}
     </div>
@@ -828,7 +838,7 @@ function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto,
             </div>
           )}
           {/* Admin correction UI */}
-          {isAdmin && (
+          {isAdmin && isPendingReview && (
             <div style={{ marginTop: 10, padding: 10, borderRadius: 8, border: '1px solid var(--primary-light)', background: 'rgba(108,92,231,0.05)' }}>
               <div className="text-xs font-700 mb-2" style={{ color: 'var(--primary-light)' }}>Corregir ejercicio</div>
               <input
@@ -890,12 +900,25 @@ function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto,
                   </button>
                 </div>
               )}
+            </div>
+          )}
+          {isAdmin && (isApproved || isRejected) && (
+            <div style={{ marginTop: 8 }} className="flex gap-6">
               <button
-                className="btn btn-sm w-full mt-2"
-                style={{ background: 'rgba(255,118,117,0.1)', color: 'var(--danger)', border: 'none', justifyContent: 'center', fontSize: '0.7rem' }}
+                className="btn btn-sm"
+                style={{ background: 'rgba(108,92,231,0.15)', color: 'var(--primary-light)', border: 'none' }}
+                onClick={() => {
+                  onCorrect(exercise.id, latestSub.timestamp, 'pending', '', null)
+                }}
+              >
+                <RefreshCw size={12} /> Volver a corregir
+              </button>
+              <button
+                className="btn btn-sm"
+                style={{ background: 'rgba(255,118,117,0.1)', color: 'var(--danger)', border: 'none' }}
                 onClick={() => onDeletePhoto(exercise.id)}
               >
-                <Trash2 size={12} /> Borrar fotos y reiniciar ejercicio
+                <Trash2 size={12} /> Reiniciar
               </button>
             </div>
           )}
@@ -931,7 +954,6 @@ function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto,
             ref={fileRef}
             type="file"
             accept="image/*"
-            capture="environment"
             style={{ display: 'none' }}
             onChange={e => {
               const file = e.target.files?.[0]
@@ -1019,7 +1041,15 @@ function TheoryBlockCard({ block, subjectColor, isAdmin, onExerciseAnswer, onPho
                 const latest = subs.length > 0 ? subs[subs.length - 1] : null
                 return !latest || latest.status === 'pending'
               })())
+              const rejectedEx = allExercises.filter(ex => ex.type === 'manual' && ex.status === 'submitted' && (() => {
+                const subs = submissions.filter(s => s.exerciseId === ex.id)
+                const latest = subs.length > 0 ? subs[subs.length - 1] : null
+                return latest?.status === 'rejected'
+              })())
               const doneEx = allExercises.filter(ex => ex.status === 'done')
+              if (rejectedEx.length > 0) {
+                return <span style={{ color: 'var(--danger)' }}>{rejectedEx.length}/{allExercises.length} rechazado{rejectedEx.length > 1 ? 's' : ''} - Corregir</span>
+              }
               if (pendingEx.length === 0 && doneEx.length === 0 && manualPendingReview.length > 0) {
                 return <span style={{ color: 'var(--primary-light)' }}>Pendiente de corregir ({manualPendingReview.length})</span>
               }
@@ -1155,7 +1185,7 @@ function extractUserState(subjects) {
         state[`block_${b.id}`] = { status: b.status }
         for (const ex of b.exercises || []) {
           if (ex.status !== 'pending') {
-            state[`ex_${ex.id}`] = { status: ex.status, studentAnswer: ex.studentAnswer, photoUrl: ex.photoUrl, photoUrls: ex.photoUrls || (ex.photoUrl ? [ex.photoUrl] : []) }
+            state[`ex_${ex.id}`] = { status: ex.status, studentAnswer: ex.studentAnswer, photoUrl: ex.photoUrl, photoUrls: ex.photoUrls || (ex.photoUrl ? [ex.photoUrl] : []), wrongAnswer: ex.wrongAnswer }
           }
         }
       }
@@ -1229,6 +1259,7 @@ function StudyPage() {
   }, [setPlan])
 
   const [submissions, setSubmissions] = useState([])
+  const [studyErrors, setStudyErrors] = useState([])
 
   // Sync plan when block statuses change
   useEffect(() => {
@@ -1337,6 +1368,10 @@ function StudyPage() {
       const savedSubs = await appStateDb.get('study_submissions')
       if (savedSubs) {
         setSubmissions(savedSubs)
+      }
+      const savedErrors = await appStateDb.get('study_errors')
+      if (savedErrors) {
+        setStudyErrors(savedErrors)
       }
       // Select today if it has plan entries
       const today = formatDate(new Date())
@@ -1862,23 +1897,77 @@ function StudyPage() {
   }
 
   const handleExerciseAnswer = (exerciseId, answer, correct) => {
-    if (!correct) return
-    setSubjects(subjects.map(s => {
-      if (s.id !== activeSubject) return s
-      return {
-        ...s,
-        topics: s.topics.map(t => ({
-          ...t,
-          theoryBlocks: (t.theoryBlocks || []).map(b => ({
-            ...b,
-            exercises: (b.exercises || []).map(ex =>
-              ex.id === exerciseId ? { ...ex, status: 'done', studentAnswer: answer } : ex
-            )
+    if (correct) {
+      setSubjects(subjects.map(s => {
+        if (s.id !== activeSubject) return s
+        return {
+          ...s,
+          topics: s.topics.map(t => ({
+            ...t,
+            theoryBlocks: (t.theoryBlocks || []).map(b => ({
+              ...b,
+              exercises: (b.exercises || []).map(ex =>
+                ex.id === exerciseId ? { ...ex, status: 'done', studentAnswer: answer } : ex
+              )
+            }))
           }))
-        }))
+        }
+      }))
+      setTimeout(() => checkAndUnlockBlocks(activeSubject), 0)
+    } else {
+      // Save wrong answer on exercise and add to errors list
+      const subject = subjects.find(s => s.id === activeSubject)
+      let errorEntry = null
+      if (subject) {
+        for (const t of subject.topics || []) {
+          for (const b of t.theoryBlocks || []) {
+            const ex = (b.exercises || []).find(e => e.id === exerciseId)
+            if (ex) {
+              const correctAnswer = ex.autoConfig?.type === 'multiple_choice'
+                ? ex.autoConfig.choices[ex.autoConfig.correctIndex]
+                : ex.autoConfig?.expectedAnswer
+              errorEntry = {
+                exerciseId: ex.id,
+                question: ex.question,
+                wrongAnswer: answer,
+                correctAnswer,
+                type: ex.autoConfig?.type || 'auto',
+                subjectName: subject.name,
+                topicName: t.name,
+                blockTitle: b.title,
+                timestamp: new Date().toISOString(),
+              }
+              break
+            }
+          }
+        }
       }
-    }))
-    setTimeout(() => checkAndUnlockBlocks(activeSubject), 0)
+      // Mark exercise with wrongAnswer so UI shows it as answered-wrong
+      setSubjects(subjects.map(s => {
+        if (s.id !== activeSubject) return s
+        return {
+          ...s,
+          topics: s.topics.map(t => ({
+            ...t,
+            theoryBlocks: (t.theoryBlocks || []).map(b => ({
+              ...b,
+              exercises: (b.exercises || []).map(ex =>
+                ex.id === exerciseId ? { ...ex, status: 'done', studentAnswer: answer, wrongAnswer: answer } : ex
+              )
+            }))
+          }))
+        }
+      }))
+      setTimeout(() => checkAndUnlockBlocks(activeSubject), 0)
+      // Save error
+      if (errorEntry) {
+        setStudyErrors(prev => {
+          const updated = [...prev, errorEntry]
+          appStateDb.set('study_errors', updated)
+          return updated
+        })
+      }
+    }
   }
 
   const handlePhotoUpload = async (exerciseId, file) => {
@@ -2713,6 +2802,82 @@ function StudyPage() {
           </>
         )}
 
+        {(() => {
+          // Collect all errors for this subject
+          const subjectAutoErrors = studyErrors.filter(e => e.subjectName === detail.name)
+          const subjectRejected = []
+          for (const t of detail.topics || []) {
+            for (const b of t.theoryBlocks || []) {
+              for (const ex of b.exercises || []) {
+                if (ex.type !== 'manual') continue
+                const subs = submissions.filter(s => s.exerciseId === ex.id)
+                const latest = subs.length > 0 ? subs[subs.length - 1] : null
+                if (latest?.status === 'rejected') {
+                  subjectRejected.push({
+                    exerciseId: ex.id,
+                    question: ex.question || ex.title || `Ejercicio ${ex.id}`,
+                    type: 'manual',
+                    subjectName: detail.name,
+                    topicName: t.name,
+                    blockTitle: b.title,
+                    feedback: latest.feedback,
+                    timestamp: latest.timestamp,
+                  })
+                }
+              }
+            }
+          }
+          const allErrors = [...subjectAutoErrors, ...subjectRejected].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+          if (allErrors.length === 0) return null
+          return (
+            <>
+              <div className="section-header">
+                <span className="section-title flex items-center gap-6">
+                  <AlertCircle size={14} style={{ color: 'var(--danger)' }} />
+                  Errores cometidos ({allErrors.length})
+                </span>
+              </div>
+              <div className="px-16" style={{ paddingBottom: 8 }}>
+                {allErrors.map((err, i) => (
+                  <div key={`${err.exerciseId}-${err.timestamp}-${i}`} style={{
+                    padding: '10px 12px', marginBottom: 6, borderRadius: 10,
+                    background: 'rgba(255,118,117,0.08)', border: '1px solid rgba(255,118,117,0.2)',
+                  }}>
+                    <div className="flex items-center gap-6" style={{ marginBottom: 4 }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', color: err.type === 'manual' ? 'var(--danger)' : '#f59e0b' }}>
+                        {err.type === 'manual' ? 'Rechazado' : err.type === 'multiple_choice' ? 'Test' : 'Respuesta'}
+                      </span>
+                      <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                        {err.topicName} &middot; {err.blockTitle}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text)', marginBottom: 4 }}>
+                      <MathText text={err.question} />
+                    </div>
+                    {err.type !== 'manual' && (
+                      <div className="flex gap-8" style={{ fontSize: '0.75rem' }}>
+                        <span style={{ color: 'var(--danger)' }}>
+                          Tu respuesta: <strong>{typeof err.wrongAnswer === 'number'
+                            ? String.fromCharCode(65 + err.wrongAnswer)
+                            : String(err.wrongAnswer)}</strong>
+                        </span>
+                        <span style={{ color: 'var(--success)' }}>
+                          Correcta: <strong>{String(err.correctAnswer)}</strong>
+                        </span>
+                      </div>
+                    )}
+                    {err.type === 'manual' && err.feedback && (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        Feedback: {err.feedback}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )
+        })()}
+
         <div className="section-header">
           <span className="section-title">Temario</span>
         </div>
@@ -2784,9 +2949,26 @@ function StudyPage() {
                     const latest = subs.length > 0 ? subs[subs.length - 1] : null
                     return !latest || latest.status === 'pending'
                   })())
+                  const rejectedEx = allEx.filter(ex => ex.type === 'manual' && ex.status === 'submitted' && (() => {
+                    const subs = submissions.filter(s => s.exerciseId === ex.id)
+                    const latest = subs.length > 0 ? subs[subs.length - 1] : null
+                    return latest?.status === 'rejected'
+                  })())
                   const allTrueComplete = allEx.length > 0 && allEx.every(ex => isExerciseComplete(ex, submissions))
                   const isPartial = state === 'in_progress' && allEx.length > 0 && pendingEx.length > 0 && pendingEx.length < allEx.length
                   const onlyCorrectionLeft = state === 'in_progress' && pendingEx.length === 0 && doneEx.length === 0 && manualPendingReview.length > 0
+
+                  if (rejectedEx.length > 0) {
+                    return (
+                      <span style={{
+                        fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase',
+                        padding: '3px 8px', borderRadius: 10,
+                        background: 'rgba(255,118,117,0.15)', color: 'var(--danger)',
+                      }}>
+                        {rejectedEx.length} rechazado{rejectedEx.length > 1 ? 's' : ''}
+                      </span>
+                    )
+                  }
 
                   if (onlyCorrectionLeft) {
                     return (
