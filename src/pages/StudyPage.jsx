@@ -1793,13 +1793,15 @@ function StudyPage() {
         correctionUrl = data.publicUrl
       }
     }
-    const updated = submissions.map(s =>
-      s.exerciseId === exerciseId && s.timestamp === timestamp
-        ? { ...s, status, feedback: feedback || '', correctionUrl: correctionUrl || s.correctionUrl || null }
-        : s
-    )
-    setSubmissions(updated)
-    appStateDb.set('study_submissions', updated)
+    setSubmissions(prev => {
+      const updated = prev.map(s =>
+        s.exerciseId === exerciseId && s.timestamp === timestamp
+          ? { ...s, status, feedback: feedback || '', correctionUrl: correctionUrl || s.correctionUrl || null }
+          : s
+      )
+      appStateDb.set('study_submissions', updated)
+      return updated
+    })
 
     // Notify student via WhatsApp
     const statusText = status === 'approved' ? 'aprobado' : 'rechazado'
@@ -2463,13 +2465,15 @@ function StudyPage() {
                               className="btn btn-sm flex-1"
                               style={{ background: 'rgba(0,206,201,0.15)', color: 'var(--success)', border: 'none', justifyContent: 'center' }}
                               onClick={() => {
-                                const updated = submissions.map(s =>
-                                  s.exerciseId === sub.exerciseId && s.timestamp === sub.timestamp
-                                    ? { ...s, status: 'approved', feedback: feedbackText }
-                                    : s
-                                )
-                                setSubmissions(updated)
-                                appStateDb.set('study_submissions', updated)
+                                setSubmissions(prev => {
+                                  const updated = prev.map(s =>
+                                    s.exerciseId === sub.exerciseId && s.timestamp === sub.timestamp
+                                      ? { ...s, status: 'approved', feedback: feedbackText }
+                                      : s
+                                  )
+                                  appStateDb.set('study_submissions', updated)
+                                  return updated
+                                })
                                 setFeedbackText('')
                                 setCorrectionFile(null)
                                 setCorrectionPreview(null)
@@ -2491,13 +2495,15 @@ function StudyPage() {
                                     correctionUrl = data.publicUrl
                                   }
                                 }
-                                const updated = submissions.map(s =>
-                                  s.exerciseId === sub.exerciseId && s.timestamp === sub.timestamp
-                                    ? { ...s, status: 'rejected', feedback: feedbackText, correctionUrl: correctionUrl || null }
-                                    : s
-                                )
-                                setSubmissions(updated)
-                                appStateDb.set('study_submissions', updated)
+                                setSubmissions(prev => {
+                                  const updated = prev.map(s =>
+                                    s.exerciseId === sub.exerciseId && s.timestamp === sub.timestamp
+                                      ? { ...s, status: 'rejected', feedback: feedbackText, correctionUrl: correctionUrl || null }
+                                      : s
+                                  )
+                                  appStateDb.set('study_submissions', updated)
+                                  return updated
+                                })
                                 setFeedbackText('')
                                 setCorrectionFile(null)
                                 setCorrectionPreview(null)
