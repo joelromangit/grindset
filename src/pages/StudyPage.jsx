@@ -66,28 +66,86 @@ const COLOR_OPTIONS = ['#ff6b6b', '#51cf66', '#4f8cff', '#ffd43b', '#cc5de8', '#
 const TOPIC_STATES = ['locked', 'available', 'in_progress', 'completed']
 
 function PhotoLightbox({ src, alt, onClose }) {
+  const [scale, setScale] = useState(1)
+  const [translate, setTranslate] = useState({ x: 0, y: 0 })
+  const lastDist = useRef(null)
+  const lastCenter = useRef(null)
+  const imgRef = useRef(null)
+
+  // Enable zoom on viewport when lightbox opens
+  useEffect(() => {
+    const meta = document.querySelector('meta[name="viewport"]')
+    const original = meta?.getAttribute('content')
+    if (meta) meta.setAttribute('content', 'width=device-width, initial-scale=1.0')
+    return () => { if (meta && original) meta.setAttribute('content', original) }
+  }, [])
+
+  const getDistance = (t1, t2) => Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY)
+  const getCenter = (t1, t2) => ({ x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 })
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault()
+      const dist = getDistance(e.touches[0], e.touches[1])
+      const center = getCenter(e.touches[0], e.touches[1])
+      if (lastDist.current !== null) {
+        const newScale = Math.min(Math.max(scale * (dist / lastDist.current), 1), 5)
+        setScale(newScale)
+        if (lastCenter.current) {
+          setTranslate(prev => ({
+            x: prev.x + (center.x - lastCenter.current.x),
+            y: prev.y + (center.y - lastCenter.current.y),
+          }))
+        }
+      }
+      lastDist.current = dist
+      lastCenter.current = center
+    }
+  }
+
+  const handleTouchEnd = () => {
+    lastDist.current = null
+    lastCenter.current = null
+    if (scale <= 1.05) { setScale(1); setTranslate({ x: 0, y: 0 }) }
+  }
+
+  const handleDoubleClick = (e) => {
+    e.stopPropagation()
+    if (scale > 1) { setScale(1); setTranslate({ x: 0, y: 0 }) }
+    else { setScale(2.5) }
+  }
+
   return (
     <div
-      onClick={onClose}
+      onClick={() => { if (scale <= 1.05) onClose() }}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
         background: 'rgba(0,0,0,0.92)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16, cursor: 'zoom-out',
+        padding: 16, cursor: 'zoom-out', touchAction: 'none', overflow: 'hidden',
       }}
     >
-      <button onClick={onClose} style={{
+      <button onClick={(e) => { e.stopPropagation(); onClose() }} style={{
         position: 'absolute', top: 16, right: 16,
         background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
-        width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+        width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10000,
       }}>
         <X size={20} color="white" />
       </button>
       <img
+        ref={imgRef}
         src={src}
         alt={alt || 'Foto'}
         onClick={e => e.stopPropagation()}
-        style={{ maxWidth: '100%', maxHeight: '90vh', borderRadius: 8, objectFit: 'contain', cursor: 'default' }}
+        onDoubleClick={handleDoubleClick}
+        style={{
+          maxWidth: '100%', maxHeight: '90vh', borderRadius: 8, objectFit: 'contain',
+          cursor: scale > 1 ? 'grab' : 'default',
+          transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+          transition: lastDist.current !== null ? 'none' : 'transform 0.2s ease',
+        }}
       />
     </div>
   )
