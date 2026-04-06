@@ -131,14 +131,30 @@ function CropModal({ imageSrc, onConfirm, onCancel }) {
   )
 }
 
-function PhotoLightbox({ src, alt, onClose }) {
+function PhotoLightbox({ images, startIndex, alt, onClose }) {
+  const [idx, setIdx] = useState(startIndex || 0)
+  const touchStart = useRef(null)
+  const imgs = Array.isArray(images) ? images : [images]
+
   useEffect(() => {
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = '' }
   }, [])
+
+  const prev = () => setIdx(i => Math.max(0, i - 1))
+  const next = () => setIdx(i => Math.min(imgs.length - 1, i + 1))
+
   return (
     <div
       onClick={onClose}
+      onTouchStart={e => { touchStart.current = e.touches[0].clientX }}
+      onTouchEnd={e => {
+        if (touchStart.current === null) return
+        const diff = e.changedTouches[0].clientX - touchStart.current
+        if (diff > 60) prev()
+        else if (diff < -60) next()
+        touchStart.current = null
+      }}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
         background: 'rgba(0,0,0,0.92)',
@@ -153,19 +169,52 @@ function PhotoLightbox({ src, alt, onClose }) {
       }}>
         <X size={20} color="white" />
       </button>
+      {imgs.length > 1 && idx > 0 && (
+        <button onClick={(e) => { e.stopPropagation(); prev() }} style={{
+          position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+          background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+          width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+        }}>
+          <ChevronLeft size={22} color="white" />
+        </button>
+      )}
+      {imgs.length > 1 && idx < imgs.length - 1 && (
+        <button onClick={(e) => { e.stopPropagation(); next() }} style={{
+          position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+          background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: '50%',
+          width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+        }}>
+          <ChevronRight size={22} color="white" />
+        </button>
+      )}
       <img
-        src={src}
+        src={imgs[idx]}
         alt={alt || 'Foto'}
         onClick={e => e.stopPropagation()}
-        style={{ maxWidth: '100%', maxHeight: '90vh', borderRadius: 8, objectFit: 'contain' }}
+        style={{ maxWidth: '100%', maxHeight: '85vh', borderRadius: 8, objectFit: 'contain' }}
       />
+      {imgs.length > 1 && (
+        <div onClick={e => e.stopPropagation()} style={{
+          position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+          display: 'flex', gap: 6,
+        }}>
+          {imgs.map((_, i) => (
+            <div key={i} onClick={() => setIdx(i)} style={{
+              width: 8, height: 8, borderRadius: '50%', cursor: 'pointer',
+              background: i === idx ? 'white' : 'rgba(255,255,255,0.35)',
+            }} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-function ClickablePhoto({ src, alt, style }) {
+function ClickablePhoto({ src, alt, style, allImages, imageIndex }) {
   const [open, setOpen] = useState(false)
   if (!src) return null
+  const images = allImages || [src]
+  const startIdx = imageIndex || 0
   return (
     <>
       <img
@@ -174,7 +223,7 @@ function ClickablePhoto({ src, alt, style }) {
         onClick={() => setOpen(true)}
         style={{ ...style, cursor: 'zoom-in' }}
       />
-      {open && <PhotoLightbox src={src} alt={alt} onClose={() => setOpen(false)} />}
+      {open && <PhotoLightbox images={images} startIndex={startIdx} alt={alt} onClose={() => setOpen(false)} />}
     </>
   )
 }
@@ -681,6 +730,8 @@ function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto,
   const isRejected = latestSub?.status === 'rejected'
   const isPendingReview = latestSub?.status === 'pending'
   const isApproved = latestSub?.status === 'approved'
+  // Backward compat: photoUrl (string) → photoUrls (array)
+  const photos = exercise.photoUrls || (exercise.photoUrl ? [exercise.photoUrl] : [])
 
   const handleFileSelected = (file, action) => {
     const url = URL.createObjectURL(file)
@@ -706,13 +757,18 @@ function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto,
         />
       )}
       <div className="text-0\.85 mb-2"><MathText text={exercise.question} /></div>
-      {exercise.photoUrl && (
-        <div style={{ marginBottom: 8 }}>
-          <ClickablePhoto
-            src={exercise.photoUrl}
-            alt="Respuesta"
-            style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 8, border: '1px solid var(--border)' }}
-          />
+      {photos.length > 0 && (
+        <div style={{ marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {photos.map((url, i) => (
+            <ClickablePhoto
+              key={i}
+              src={url}
+              alt={`Foto ${i + 1}`}
+              allImages={photos}
+              imageIndex={i}
+              style={{ maxWidth: photos.length === 1 ? '100%' : 'calc(50% - 3px)', maxHeight: 200, borderRadius: 8, border: '1px solid var(--border)', objectFit: 'cover' }}
+            />
+          ))}
         </div>
       )}
       {exercise.status === 'submitted' && (
@@ -861,7 +917,7 @@ function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto,
           </div>
         </details>
       )}
-      {!exercise.photoUrl && exercise.status !== 'submitted' && (
+      {photos.length < 3 && exercise.status !== 'submitted' && (
         <>
           <input
             ref={fileRef}
@@ -876,14 +932,14 @@ function ManualExercise({ exercise, onPhotoUpload, onRetryUpload, onDeletePhoto,
             }}
           />
           <button className="btn btn-outline btn-sm" onClick={() => fileRef.current?.click()}>
-            <Camera size={14} /> Subir foto
+            <Camera size={14} /> {photos.length > 0 ? `Anadir foto (${photos.length}/3)` : 'Subir foto'}
           </button>
         </>
       )}
-      {exercise.photoUrl && !isDone && exercise.status !== 'submitted' && (
+      {photos.length > 0 && !isDone && exercise.status !== 'submitted' && (
         <div className="flex items-center gap-2 mt-1">
           <CheckCircle size={14} style={{ color: 'var(--success)' }} />
-          <span className="text-xs text-success font-600">Foto subida</span>
+          <span className="text-xs text-success font-600">{photos.length} foto{photos.length > 1 ? 's' : ''} subida{photos.length > 1 ? 's' : ''}</span>
         </div>
       )}
     </div>
@@ -1091,7 +1147,7 @@ function extractUserState(subjects) {
         state[`block_${b.id}`] = { status: b.status }
         for (const ex of b.exercises || []) {
           if (ex.status !== 'pending') {
-            state[`ex_${ex.id}`] = { status: ex.status, studentAnswer: ex.studentAnswer, photoUrl: ex.photoUrl }
+            state[`ex_${ex.id}`] = { status: ex.status, studentAnswer: ex.studentAnswer, photoUrl: ex.photoUrl, photoUrls: ex.photoUrls || (ex.photoUrl ? [ex.photoUrl] : []) }
           }
         }
       }
@@ -1610,7 +1666,7 @@ function StudyPage() {
               status: 'available',
               exercises: (b.exercises || []).map(ex => {
                 if (ex.status !== 'pending') resetExerciseIds.push(ex.id)
-                return { ...ex, status: 'pending', studentAnswer: null, photoUrl: null }
+                return { ...ex, status: 'pending', studentAnswer: null, photoUrl: null, photoUrls: [] }
               })
             }
           })
@@ -1759,7 +1815,7 @@ function StudyPage() {
               status: 'available',
               exercises: (b.exercises || []).map(ex => {
                 if (ex.status !== 'pending') resetExerciseIds.push(ex.id)
-                return { ...ex, status: 'pending', studentAnswer: null, photoUrl: null }
+                return { ...ex, status: 'pending', studentAnswer: null, photoUrl: null, photoUrls: [] }
               })
             }
           })
@@ -1839,9 +1895,12 @@ function StudyPage() {
           ...t,
           theoryBlocks: (t.theoryBlocks || []).map(b => ({
             ...b,
-            exercises: (b.exercises || []).map(ex =>
-              ex.id === exerciseId ? { ...ex, status: 'done', photoUrl } : ex
-            )
+            exercises: (b.exercises || []).map(ex => {
+              if (ex.id !== exerciseId) return ex
+              const existing = ex.photoUrls || (ex.photoUrl ? [ex.photoUrl] : [])
+              const photoUrls = [...existing, photoUrl].slice(0, 3)
+              return { ...ex, status: 'done', photoUrl: photoUrls[0], photoUrls }
+            })
           }))
         }))
       }
@@ -1873,7 +1932,7 @@ function StudyPage() {
           theoryBlocks: (t.theoryBlocks || []).map(b => ({
             ...b,
             exercises: (b.exercises || []).map(ex =>
-              ex.id === exerciseId ? { ...ex, status: 'pending', photoUrl: null, studentAnswer: null } : ex
+              ex.id === exerciseId ? { ...ex, status: 'pending', photoUrl: null, photoUrls: [], studentAnswer: null } : ex
             )
           }))
         }))
@@ -1926,7 +1985,7 @@ function StudyPage() {
     if (!photoUrl) {
       photoUrl = URL.createObjectURL(file)
     }
-    // Set exercise back to 'done' with new photo so it can be re-submitted
+    // Set exercise back to 'done' with new photos so it can be re-submitted
     setSubjects(prev => prev.map(s => {
       if (s.id !== activeSubject) return s
       return {
@@ -1936,7 +1995,7 @@ function StudyPage() {
           theoryBlocks: (t.theoryBlocks || []).map(b => ({
             ...b,
             exercises: (b.exercises || []).map(ex =>
-              ex.id === exerciseId ? { ...ex, status: 'done', photoUrl } : ex
+              ex.id === exerciseId ? { ...ex, status: 'done', photoUrl, photoUrls: [photoUrl] } : ex
             )
           }))
         }))
@@ -1968,6 +2027,7 @@ function StudyPage() {
               question: ex.question,
               answer: ex.studentAnswer || ex.photoUrl || '',
               photoUrl: ex.photoUrl || null,
+              photoUrls: ex.photoUrls || (ex.photoUrl ? [ex.photoUrl] : []),
               type: ex.type,
               subjectName: subject.name,
               topicName,
@@ -2502,13 +2562,18 @@ function StudyPage() {
                         </span>
                       </div>
                       <div className="text-0\.82 mb-2"><MathText text={sub.question} /></div>
-                      {sub.photoUrl && (
-                        <div style={{ marginBottom: 8 }}>
-                          <ClickablePhoto
-                            src={sub.photoUrl}
-                            alt="Respuesta"
-                            style={{ maxWidth: '100%', maxHeight: 150, borderRadius: 8, border: '1px solid var(--border)' }}
-                          />
+                      {(sub.photoUrls?.length > 0 || sub.photoUrl) && (
+                        <div style={{ marginBottom: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {(sub.photoUrls || [sub.photoUrl]).filter(Boolean).map((url, pi) => (
+                            <ClickablePhoto
+                              key={pi}
+                              src={url}
+                              alt={`Foto ${pi + 1}`}
+                              allImages={sub.photoUrls || [sub.photoUrl]}
+                              imageIndex={pi}
+                              style={{ maxWidth: (sub.photoUrls || []).length > 1 ? 'calc(50% - 3px)' : '100%', maxHeight: 150, borderRadius: 8, border: '1px solid var(--border)', objectFit: 'cover' }}
+                            />
+                          ))}
                         </div>
                       )}
                       {sub.answer && !sub.photoUrl && (
